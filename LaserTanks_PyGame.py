@@ -8,13 +8,13 @@ Created on Wed May 31 10:49:49 2017
 
 import numpy as np
 import pygame as pg
-from pygame import gfxdraw
+from pygame import gfxdraw # why does this need to be imported separately?
 from math import pi
 
-d2r = pi/180
+#d2r = pi/180
 
-px = 25  # pixels per game unit
-(screen_width, screen_height) = (30, 20)  # arena size in game units
+px = 20  # pixels per game unit
+(screen_width, screen_height) = (40, 40)  # arena size in game units
 
 screen = pg.display.set_mode((screen_width*px, screen_height*px))
 pg.display.set_caption("Laser Tanks!")
@@ -73,8 +73,8 @@ class Tank():
         self.hull = 100
         self.battery = 100
         self.color = color
-        self.shield = None
-        self.reload_time = 1
+#        self.shield = None
+#        self.reload_time = 1
 
     def draw(self):
 
@@ -139,6 +139,7 @@ class Tank():
 R = Tank((200, 25, 0), [26., 11.], [-45., -45.])
 G = Tank((0, 195, 25), [3., 3.], [24., 11.])
 B = Tank((0, 50, 255), [12., 16.], [95., 15.])
+Tanks = [R, G, B]
 
 # left, right tread speed in units/sec
 R.drive = np.array([4., 1.])
@@ -148,9 +149,8 @@ G.drive = np.array([2., -2.])
 
 def draw():
 
-    R.draw()
-    G.draw()
-    B.draw()
+    for nTank in Tanks:
+        nTank.draw()
 
     pg.display.flip()
 
@@ -158,8 +158,9 @@ def draw():
 clock = pg.time.Clock()
 running = True
 
+fps = 60
 while running:
-    clock.tick(60)  # limit fps
+    clock.tick(fps)  # limit fps
 
     # End loop when window is closed
     for event in pg.event.get():
@@ -175,9 +176,8 @@ while running:
                            (round(px*(x+1/2)),
                             round(px*(y+1/2))), round(px/10))
 
-    R.move(1/60)
-    B.move(1/60)
-    G.move(1/60)
+    for nTank in Tanks:
+        nTank.move(1/fps)
     draw()
 
 
