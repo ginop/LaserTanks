@@ -8,14 +8,14 @@ Created on Wed May 31 10:49:49 2017
 
 import numpy as np
 import pygame as pg
-from pygame import gfxdraw
+from pygame import gfxdraw # why does this need to be imported separately?
 from math import pi
 import testControls
 
-d2r = pi/180
+#d2r = pi/180
 
-px = 25  # pixels per game unit
-(screen_width, screen_height) = (30, 20)  # arena size in game units
+px = 20  # pixels per game unit
+(screen_width, screen_height) = (40, 40)  # arena size in game units
 
 screen = pg.display.set_mode((screen_width*px, screen_height*px))
 pg.display.set_caption("Laser Tanks!")
@@ -100,7 +100,7 @@ class Tank():
         self.hull = 100
         self.battery = 100
         self.color = color
-        self.shield = None
+        # self.shield = None
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed up)
@@ -188,6 +188,7 @@ R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
 G = Tank(testControls.G, (0, 195, 25), [3., 3.], [24., 11.])
 B = Tank(testControls.B, (0, 50, 255), [12., 16.], [95., 15.])
 
+
 tanks = [R, G, B]
 
 clock = pg.time.Clock()
@@ -195,6 +196,7 @@ running = True
 fps = 60
 time = 0
 
+fps = 60
 while running:
 
     clock.tick(fps)  # limit fps
