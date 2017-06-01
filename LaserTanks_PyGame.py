@@ -46,6 +46,9 @@ def text(str, pos, color, centered=False):
     pos *= px
     label = myfont.render(str, 1, color)
     if centered:
+        # TODO: Better text centering
+        # Using the Rect size doesn't seem to make the text exactly centered
+        # It is close, but can we do better?
         r = label.get_rect()
         pos -= [r.width/2., r.height/2.]
     pos = pos.round().astype(int)
@@ -106,6 +109,7 @@ def circle(center, radius, color, edge_color=None):
 
 
 class Tank():
+    # TODO: Move Tank class to separate file from pygame code
 
     # Define universal tank shape as Class (not instance) properties
     body_width = 2.
@@ -186,6 +190,7 @@ class Tank():
         text("{}".format(self.hull), self.position, (0, 0, 0), centered=True)
 
         # draw laser if shooting (indicated by time_to_read above reload_time)
+        # TODO: Implement hit checking and update laser drawing accordingly
         if self.time_to_ready > self.reload_time:
             laser = (u * [Tank.laser_width, 1000] +
                      [0, Tank.barrel_length + 0.5 + 500])
