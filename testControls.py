@@ -13,14 +13,14 @@ Controller outputs:
 """
 
 
-def R(t, Tank):
+def R(t, Tank, info):
     drive = np.array([4., 1.])
     spin = 0.
     shoot = (t % 3) < 0.2
     return drive, spin, shoot
 
 
-def G(t, Tank):
+def G(t, Tank, info):
     drive = np.array([2., -2.])
     spread = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
     w = (drive[1] - drive[0])/spread
@@ -29,7 +29,7 @@ def G(t, Tank):
     return drive, spin, shoot
 
 
-def B(t, Tank):
+def B(t, Tank, info):
     drive = np.array([3., 5.])
     spread = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
     w = (drive[1] - drive[0])/spread

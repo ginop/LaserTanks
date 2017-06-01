@@ -125,7 +125,9 @@ class Game():
                                    (round(self.px*(x+1/2)),
                                     round(self.px*(y+1/2))), round(self.px/10))
 
-            [T.update(dt, time) for T in self.tanks]
+            public_info = [[them.public() for them in self.tanks
+                            if them is not me] for me in self.tanks]
+            [T.update(dt, time, P) for T, P in zip(self.tanks, public_info)]
             [T.move(dt) for T in self.tanks]
             [T.draw() for T in self.tanks if T.hull > 0]
 

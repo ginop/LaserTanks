@@ -110,8 +110,8 @@ class Tank():
             laser += self.position
             self.game.polygon(laser, self.color, (255, 255, 255))
 
-    def update(self, dt, t):
-        self.drive, self.spin, self.shoot = self.control(t, Tank)
+    def update(self, dt, t, info):
+        self.drive, self.spin, self.shoot = self.control(t, Tank, info)
 
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
@@ -136,3 +136,9 @@ class Tank():
             self.position[0] -= v/w*(np.cos(a+w*dt)-np.cos(a))
             self.position[1] += v/w*(np.sin(a+w*dt)-np.sin(a))
             self.orientation[0] += w*dt*180/pi
+
+    def public(self):
+        return {"position": self.position,
+                "orientation": self.orientation,
+                "is_firing": self.time_to_ready > self.reload_time,
+                "color": self.color}
