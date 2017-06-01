@@ -1,29 +1,29 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Created on Wed May 31 10:49:49 2017
-
-@author: robertperrotta
-"""
-
 import numpy as np
 import pygame as pg
-from pygame import gfxdraw # why does this need to be imported separately?
+# gfxdraw is a submodule (a child directory in the pygame folder) so it must be
+# specifically imported. from pygame import * would not include it.
+from pygame import gfxdraw
 from math import pi
 import testControls
-
-#d2r = pi/180
 
 px = 20  # pixels per game unit
 (screen_width, screen_height) = (40, 40)  # arena size in game units
 
 screen = pg.display.set_mode((screen_width*px, screen_height*px))
-pg.display.set_caption("Laser Tanks!")
-pg.init()
+pg.display.set_caption("Laser Tanks!")  # The window title
+pg.init()  # must be called before pg.font.SysFont()
 myfont = pg.font.SysFont("monospace", 12)
 
 
 def rotate(points, angle):
+    """
+    A helper function for 2D rotations.
+    Inputs:
+        points: a 2xn numpy array
+        angle: rotation angle in degrees
+    Outputs:
+        points: rotated array
+    """
     ca = np.cos(angle*pi/180)
     sa = np.sin(angle*pi/180)
     R = np.array([[[ca, -sa], [sa, ca]]])
@@ -33,6 +33,14 @@ def rotate(points, angle):
 
 
 def text(str, pos, color, centered=False):
+    """
+    PyGame label printing function
+    Inputs:
+        str: the text to print
+        pos: the position in game units of top left corner (or centered)
+        color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
+        centered: interpret pos as text center, not corner
+    """
     pos = np.array(pos)
     pos[1] = screen_height - pos[1]
     pos *= px
@@ -45,11 +53,28 @@ def text(str, pos, color, centered=False):
 
 
 def line(points, color):
+    """
+    PyGame line printing helper function
+    Prints an antialiased line, handling conversion from game units to pixels
+    Inputs:
+        points: 2x2 numpy array of line end-points [[x1, y1], [x2, y2]]
+        color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
+    """
     points[:, 1] = screen_height - points[:, 1]
     pg.draw.aaline(screen, color, px*points[0, :], px*points[1, :])
 
 
 def polygon(points, color, edge_color=None):
+    """
+    PyGame polygon printing helper function
+    Prints a polygon with an antialiased edge, handling conversion from game
+    units to pixels
+    Inputs:
+        points: 2x2 numpy array of line end-points [[x1, y1], [x2, y2]]
+        color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
+        edge_color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]; if
+                    ommitted, edge_color matches color
+    """
     if edge_color is None:
         edge_color = color
     # Invert Y coordinate so up is positive (PyGame uses down as positive)
@@ -59,6 +84,17 @@ def polygon(points, color, edge_color=None):
 
 
 def circle(center, radius, color, edge_color=None):
+    """
+    PyGame circle printing helper function
+    Prints a circle with an antialiased edge, handling conversion from game
+    units to pixels
+    Inputs:
+        center: sequence of x and y coordinates of circle center
+        radius: radius of the circle
+        color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
+        edge_color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]; if
+                    ommitted, edge_color matches color
+    """
     if edge_color is None:
         edge_color = color
     gfxdraw.filled_circle(screen, int(round(px*center[0])),
@@ -101,6 +137,7 @@ class Tank():
         self.battery = 100
         self.color = color
         # self.shield = None
+
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed up)
@@ -187,7 +224,6 @@ class Tank():
 R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
 G = Tank(testControls.G, (0, 195, 25), [3., 3.], [24., 11.])
 B = Tank(testControls.B, (0, 50, 255), [12., 16.], [95., 15.])
-
 
 tanks = [R, G, B]
 
