@@ -10,6 +10,7 @@ import numpy as np
 import pygame as pg
 from pygame import gfxdraw
 from math import pi
+import testControls
 
 d2r = pi/180
 
@@ -31,25 +32,41 @@ def rotate(points, angle):
     return points
 
 
+def text(str, pos, color, centered=False):
+    pos = np.array(pos)
+    pos[1] = screen_height - pos[1]
+    pos *= px
+    label = myfont.render(str, 1, color)
+    if centered:
+        r = label.get_rect()
+        pos -= [r.width/2., r.height/2.]
+    pos = pos.round().astype(int)
+    screen.blit(label, pos)
+
+
 def line(points, color):
     points[:, 1] = screen_height - points[:, 1]
     pg.draw.aaline(screen, color, px*points[0, :], px*points[1, :])
 
 
-def polygon(points, color):
+def polygon(points, color, edge_color=None):
+    if edge_color is None:
+        edge_color = color
     # Invert Y coordinate so up is positive (PyGame uses down as positive)
     points[:, 1] = screen_height - points[:, 1]
     gfxdraw.filled_polygon(screen, (px*points).round().astype(int), color)
-    gfxdraw.aapolygon(screen, (px*points).round().astype(int), color)
+    gfxdraw.aapolygon(screen, (px*points).round().astype(int), edge_color)
 
 
-def circle(center, radius, color):
+def circle(center, radius, color, edge_color=None):
+    if edge_color is None:
+        edge_color = color
     gfxdraw.filled_circle(screen, int(round(px*center[0])),
                           int(round(px*(screen_height-center[1]))),
                           int(round(px*radius)), color)
     gfxdraw.aacircle(screen, int(round(px*center[0])),
                      int(round(px*(screen_height-center[1]))),
-                     int(round(px*radius)), color)
+                     int(round(px*radius)), edge_color)
 
 
 class Tank():
@@ -63,21 +80,29 @@ class Tank():
     turret_radius = 0.6
     barrel_width = 0.2
     barrel_length = 1.
+    laser_width = barrel_width
+    blast_radius = 0.4
 
-    def __init__(self, color, pos=[0., 0.], orient=[0., 0.]):
+    laser_dur = 0.5  # duration of laser shot in seconds
+    damage = 100  # HP per sec
+    reload_time = 1
+
+    def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
+        self.control = control
         self.position = np.array(pos).astype(float)
-        self.orientation = orient
+        self.orientation = np.array(orient)
         self.velocity = np.array([0, 0]).astype(float)
-        self.drive = np.array([0., 0.])
-        self.tread_offset = np.array([0., 0.])
+        self.drive = np.array([0., 0.])  # L and R tread speed in units/sec
+        self.tread_offset = np.array([0., 0.])  # for animating treads
+        self.spin = 0.  # commanded turret spin in degrees per sec
+        self.shoot = False  # command to fire laser
+        self.time_to_ready = 0.  # counts down from reload_time after each shot
         self.hull = 100
         self.battery = 100
         self.color = color
         self.shield = None
-        self.reload_time = 1
 
     def draw(self):
-
         # Specify tank shape centered on origin with 0 rotation (pointed up)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         body = u * [Tank.body_width, Tank.body_length]
@@ -119,6 +144,27 @@ class Tank():
         polygon(barrel, self.color)
         circle(self.position, 0.6, self.color)
 
+        # print HP on tank turret
+        text("{}".format(self.hull), self.position, (0, 0, 0), centered=True)
+
+        # draw laser if shooting (indicated by time_to_read above reload_time)
+        if self.time_to_ready > self.reload_time:
+            laser = (u * [Tank.laser_width, 1000] +
+                  [0, Tank.barrel_length + 0.5 + 500])
+            laser = rotate(laser, self.orientation[0]+self.orientation[1])
+            laser += self.position
+            polygon(laser, self.color, (255, 255, 255))
+
+
+    def update(self, dt, t):
+        self.drive, self.spin, self.shoot = self.control(t, Tank)
+        
+        self.time_to_ready -= dt
+        if self.time_to_ready > 0.:
+            self.shoot = False
+        elif self.shoot:
+            self.time_to_ready = Tank.reload_time + self.laser_dur
+
     def move(self, dt):
         # forward motion is average of tread speeds
         v = (self.drive[0] + self.drive[1])/2
@@ -127,6 +173,7 @@ class Tank():
         w = (self.drive[1] - self.drive[0])/spread
         # motion is an arc
         self.tread_offset += self.drive*dt
+        self.orientation[1] += self.spin*dt
         a = self.orientation[0]*pi/180  # for brevity below
         if w == 0.0:
             self.position[0] += dt*v*np.sin(a)
@@ -136,30 +183,23 @@ class Tank():
             self.position[1] += v/w*(np.sin(a+w*dt)-np.sin(a))
             self.orientation[0] += w*dt*180/pi
 
-R = Tank((200, 25, 0), [26., 11.], [-45., -45.])
-G = Tank((0, 195, 25), [3., 3.], [24., 11.])
-B = Tank((0, 50, 255), [12., 16.], [95., 15.])
 
-# left, right tread speed in units/sec
-R.drive = np.array([4., 1.])
-B.drive = np.array([3., 5.])
-G.drive = np.array([2., -2.])
+R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
+G = Tank(testControls.G, (0, 195, 25), [3., 3.], [24., 11.])
+B = Tank(testControls.B, (0, 50, 255), [12., 16.], [95., 15.])
 
-
-def draw():
-
-    R.draw()
-    G.draw()
-    B.draw()
-
-    pg.display.flip()
-
+tanks = [R, G, B]
 
 clock = pg.time.Clock()
 running = True
+fps = 60
+time = 0
 
 while running:
-    clock.tick(60)  # limit fps
+
+    clock.tick(fps)  # limit fps
+    dt = clock.get_time()/1000
+    time += dt
 
     # End loop when window is closed
     for event in pg.event.get():
@@ -175,11 +215,15 @@ while running:
                            (round(px*(x+1/2)),
                             round(px*(y+1/2))), round(px/10))
 
-    R.move(1/60)
-    B.move(1/60)
-    G.move(1/60)
-    draw()
+    [T.update(dt, time) for T in tanks]
+    [T.move(dt) for T in tanks]
+    [T.draw() for T in tanks if T.hull > 0]
 
+    actual_fps = clock.get_fps()
+    text("FPS: {:.2f}".format(actual_fps),
+         (1/4, screen_height-1/4), (255, 255, 255))
+
+    pg.display.flip()
 
 pg.quit()
 quit()
