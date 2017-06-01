@@ -16,7 +16,7 @@ Controller outputs:
 def R(t, Tank):
     drive = np.array([4., 1.])
     spin = 0.
-    shoot = (t%3)<0.2
+    shoot = (t % 3) < 0.2
     return drive, spin, shoot
 
 
@@ -25,7 +25,7 @@ def G(t, Tank):
     spread = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
     w = (drive[1] - drive[0])/spread
     spin = -w*180/pi  # counter spin
-    shoot = (t%4)<0.2
+    shoot = (t % 4) < 0.2
     return drive, spin, shoot
 
 
