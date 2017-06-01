@@ -138,13 +138,13 @@ class Tank():
         self.color = color
         # self.shield = None
 
-
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed up)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         body = u * [Tank.body_width, Tank.body_length]
         tread_r = (u * [Tank.tread_width, Tank.tread_length] +
-                   [Tank.body_width/2+Tank.tread_width/2-Tank.tread_overlap, 0])
+                   [Tank.body_width/2 + Tank.tread_width/2 -
+                    Tank.tread_overlap, 0])
         tread_l = -tread_r
         barrel = (u * [Tank.barrel_width, Tank.barrel_length] +
                   [0, Tank.barrel_length/2])
@@ -171,8 +171,9 @@ class Tank():
             for ii in range(n):
                 y = (Tank.tread_length*ii/n + offset) % Tank.tread_length
                 y -= Tank.tread_length/2
-                pts = np.array([[sign*(Tank.body_width/2+Tank.tread_width-Tank.tread_overlap), y],
-                                 [sign*(Tank.body_width/2-Tank.tread_overlap), y]])
+                x1 = Tank.body_width/2 - Tank.tread_overlap
+                x2 = Tank.body_width/2 + Tank.tread_width - Tank.tread_overlap
+                pts = np.array([[sign*x1, y], [sign*x2, y]])
                 pts = rotate(pts, self.orientation[0])
                 pts += self.position
                 line(pts, (0, 0, 0))
@@ -187,15 +188,14 @@ class Tank():
         # draw laser if shooting (indicated by time_to_read above reload_time)
         if self.time_to_ready > self.reload_time:
             laser = (u * [Tank.laser_width, 1000] +
-                  [0, Tank.barrel_length + 0.5 + 500])
+                     [0, Tank.barrel_length + 0.5 + 500])
             laser = rotate(laser, self.orientation[0]+self.orientation[1])
             laser += self.position
             polygon(laser, self.color, (255, 255, 255))
 
-
     def update(self, dt, t):
         self.drive, self.spin, self.shoot = self.control(t, Tank)
-        
+
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
             self.shoot = False
