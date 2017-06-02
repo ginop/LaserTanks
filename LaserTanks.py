@@ -171,24 +171,7 @@ class Game():
                     shooter.laser_length = Tank.laser_length
 
 
-if __name__ is "__main__":
-
-    """import testControls
-    R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
-    G = Tank(testControls.G, (0, 195, 25), [3., 3.], [24., 11.])
-    B = Tank(testControls.B, (0, 50, 255), [12., 16.], [95., 15.])
-    game = Game(tanks=[R, G, B])"""
-
-    """R = Tank(testControls.shooty, (200, 25, 0), [3, 20.], [0., 0.])
-    G = Tank(testControls.shooty, (0, 195, 25), [20, 20.5], [45., -45.])
-    B = Tank(testControls.shooty, (0, 50, 255), [37, 20.8], [90., 90.])
-    # game = Game(tanks=[R, B])
-    game = Game(tanks=[R, G, B])"""
-
-    """R = Tank(testControls.dummy, (200, 25, 0), [3., 3.], [45., 0.])
-    G = Tank(testControls.dummy, (0, 195, 25), [20.5, 20.], [90., -45.])
-    B = Tank(testControls.dummy, (0, 50, 255), [37., 37.5], [-45., -90.])
-    game = Game(tanks=[R, G, B])"""
+if __name__ == "__main__":
 
     screen_width = 40
     screen_height = 40
