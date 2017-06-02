@@ -2,6 +2,7 @@
 
 import numpy as np
 import pygame as pg
+from math import pi
 # gfxdraw is a submodule (a child directory in the pygame folder) so it must be
 # specifically imported. from pygame import * would not include it.
 from pygame import gfxdraw
@@ -105,6 +106,14 @@ class Game():
                              int(round(self.px *
                                        (self.screen_height-center[1]))),
                              int(round(self.px*radius)), edge_color)
+
+    # TODO: gfxdraw.arc doesn't have a thickness according to the docs and
+    #       pg.draw.arc is ugly. Can we do better?
+    """def arc(self, center, radius, start, stop, color):
+        gfxdraw.arc(self.screen, int(round(self.px * center[0])),
+                    int(round(self.px * (self.screen_height - center[1]))),
+                    int(round(self.px * radius)), int(round(start*pi/180)),
+                    int(round(stop*pi/180)), color)"""
 
     def run(self):
         clock = pg.time.Clock()

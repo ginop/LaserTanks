@@ -107,6 +107,10 @@ class Tank():
         self.game.text("{:.0f}".format(self.hull), self.position,
                        (0, 0, 0), centered=True)
 
+        # TODO: draw arc representing reload readiness
+        """self.game.arc(self.position, self.turret_radius,
+                      0, 270, (150, 150, 150))"""
+
     def draw_laser(self):
         # draw laser if shooting (indicated by time_to_read above reload_time)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
