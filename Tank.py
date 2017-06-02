@@ -40,6 +40,8 @@ class Tank():
     laser_dur = 0.5  # duration of laser shot in seconds
     damage = 50.  # HP per sec
     reload_time = 1.
+    maxDriveThrottle = 1.
+    maxTurretTorque = 1.
 
     def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
         self.game = None
@@ -122,9 +124,12 @@ class Tank():
             self.game.circle(center, self.blast_radius, self.color)
 
     def update(self, dt, t, target_info):
-        self.drive, self.spin, self.shoot = self.control.main(t, Tank,
-                                                              self.public(),
-                                                              target_info)
+        throttle, self.shoot = self.control.main(t, Tank, self.public(),
+                                                      target_info)
+        
+        self.drive += Tank.maxDriveThrottle * dt * throttle[0]
+        self.spin += Tank.maxTurretTorque * dt * throttle[1]
+        
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
             self.shoot = False
@@ -152,6 +157,8 @@ class Tank():
     def public(self):
         return {"position": self.position,
                 "orientation": self.orientation,
+                "drive": self.drive,
+                "spin": self.spin,
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color}
 

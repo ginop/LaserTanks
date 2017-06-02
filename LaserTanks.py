@@ -179,7 +179,7 @@ if __name__ == "__main__":
 
     screen_width = 40
     screen_height = 40
-    R = Tank('FixedOffset_PIDTracking_Controller', (200, 25, 0),
+    R = Tank('FixedOffsetController', (200, 25, 0),
              [screen_width/4, screen_height/2], [90, 0])
     B = Tank('FixedOffsetController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
