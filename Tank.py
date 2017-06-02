@@ -6,21 +6,22 @@ def rotate(points, angle):
     """
     A helper function for 2D rotations.
     Inputs:
-        points: a 2xn numpy array
+        points: a nx2 numpy array
         angle: rotation angle in degrees
     Outputs:
-        points: rotated array
+        points: nx2 rotated array
     """
     ca = np.cos(angle*pi/180)
     sa = np.sin(angle*pi/180)
-    R = np.array([[[ca, -sa], [sa, ca]]])
-    points.shape += (1,)
-    points = (R*points).sum(axis=1)
+    R = np.array([[ca, -sa], [sa, ca]])  # positive is CCW
+    R.shape += (1,)  # add dim for broadcasting over n points
+    points = points.T
+    points.shape = (1,) + points.shape  # 1x2xn
+    points = (R*points).sum(axis=1).T  # do rotation and return original shape
     return points
 
 
 class Tank():
-    # TODO: Move Tank class to separate file from pygame code
 
     # Define universal tank shape as Class (not instance) properties
     body_width = 2.
@@ -34,9 +35,10 @@ class Tank():
     laser_width = barrel_width
     blast_radius = 0.4
 
+    laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
-    damage = 100  # HP per sec
-    reload_time = 1
+    damage = 10.  # HP per sec
+    reload_time = 1.
 
     def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
         self.game = None
@@ -48,22 +50,23 @@ class Tank():
         self.tread_offset = np.array([0., 0.])  # for animating treads
         self.spin = 0.  # commanded turret spin in degrees per sec
         self.shoot = False  # command to fire laser
-        self.time_to_ready = 0.  # counts down from reload_time after each shot
-        self.hull = 100
-        self.battery = 100
+        self.time_to_ready = self.reload_time
+        self.hull = 100.
+        self.battery = 100.
         self.color = color
+        self.laser_length = Tank.laser_length  # made shorter on hit
         # self.shield = None
 
     def draw(self):
-        # Specify tank shape centered on origin with 0 rotation (pointed up)
+        # Specify tank shape centered on origin with 0 rotation (pointed right)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
-        body = u * [Tank.body_width, Tank.body_length]
-        tread_r = (u * [Tank.tread_width, Tank.tread_length] +
-                   [Tank.body_width/2 + Tank.tread_width/2 -
-                    Tank.tread_overlap, 0])
+        body = u * [Tank.body_length, Tank.body_width]
+        tread_r = (u * [Tank.tread_length, Tank.tread_width] +
+                   [0, Tank.body_width/2 + Tank.tread_width/2 -
+                    Tank.tread_overlap])
         tread_l = -tread_r
-        barrel = (u * [Tank.barrel_width, Tank.barrel_length] +
-                  [0, Tank.barrel_length/2])
+        barrel = (u * [Tank.barrel_length, Tank.barrel_width] +
+                  [Tank.barrel_length/2, 0])
 
         # Rotate treads and body
         body = rotate(body, self.orientation[0])
@@ -85,11 +88,11 @@ class Tank():
         for offset, sign in zip(self.tread_offset, [1, -1]):
             n = 5
             for ii in range(n):
-                y = (Tank.tread_length*ii/n + offset) % Tank.tread_length
-                y -= Tank.tread_length/2
-                x1 = Tank.body_width/2 - Tank.tread_overlap
-                x2 = Tank.body_width/2 + Tank.tread_width - Tank.tread_overlap
-                pts = np.array([[sign*x1, y], [sign*x2, y]])
+                x = (Tank.tread_length*ii/n + offset) % Tank.tread_length
+                x -= Tank.tread_length/2
+                y1 = Tank.body_width/2 - Tank.tread_overlap
+                y2 = Tank.body_width/2 + Tank.tread_width - Tank.tread_overlap
+                pts = np.array([[x, sign*y1], [x, sign*y2]])
                 pts = rotate(pts, self.orientation[0])
                 pts += self.position
                 self.game.line(pts, (0, 0, 0))
@@ -99,16 +102,25 @@ class Tank():
         self.game.circle(self.position, 0.6, self.color)
 
         # print HP on tank turret
-        self.game.text("{}".format(self.hull), self.position, (0, 0, 0), centered=True)
+        self.game.text("{:.0f}".format(self.hull), self.position,
+                       (0, 0, 0), centered=True)
 
         # draw laser if shooting (indicated by time_to_read above reload_time)
         # TODO: Implement hit checking and update laser drawing accordingly
         if self.time_to_ready > self.reload_time:
-            laser = (u * [Tank.laser_width, 1000] +
-                     [0, Tank.barrel_length + 0.5 + 500])
+            laser = (u * [self.laser_length, self.laser_width] +
+                     [self.barrel_length + self.laser_length/2, 0])
             laser = rotate(laser, self.orientation[0]+self.orientation[1])
             laser += self.position
             self.game.polygon(laser, self.color, (255, 255, 255))
+            """
+            self.game.circle(laser[0, :], self.laser_width/2, None, (255, 255, 255))
+            self.game.circle(laser[1, :], self.blast_radius, None, (255, 255, 255))
+            self.game.polygon(laser, None, (255, 255, 255))
+            self.game.circle(laser[0, :], self.laser_width/2, self.color, None)
+            self.game.circle(laser[1, :], self.blast_radius, self.color, None)
+            self.game.polygon(laser, self.color, None)
+            """
 
     def update(self, dt, t, info):
         self.drive, self.spin, self.shoot = self.control(t, Tank, info)
@@ -142,3 +154,52 @@ class Tank():
                 "orientation": self.orientation,
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color}
+
+    def get_beam(self):
+        if self.time_to_ready > self.reload_time:
+            barrel = np.array([[Tank.barrel_length, 0]])
+            barrel = rotate(barrel, self.orientation[0]+self.orientation[1])
+            barrel += self.position
+            return (barrel[0, 0], barrel[0, 1],
+                    self.orientation[0]+self.orientation[1])
+        else:
+            return None
+
+    def detect_hit(self, laser):
+        """
+        Inputs:
+            laser: a tuple of origin and angle (x, y, angle)
+        Outputs:
+            dist: distance from laser origin to impact point, [] if no impact
+        """
+        # Determine hitbox for tank (just use body, not treads, for simplicity)
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
+        hitbox = u * [self.body_length, self.body_width]
+        # import pdb; pdb.set_trace()
+        hitbox = rotate(hitbox, self.orientation[0])
+        hitbox += self.position
+        # Translate laser to origin
+        hitbox -= laser[:2]
+        # Rotate laser to x-axis
+        hitbox = rotate(hitbox, -laser[2])
+        # There is a hit if any edge crosses x-axis at non-negative x
+        hitbox = np.vstack((hitbox, hitbox[0, :]))
+        dist = []
+        for ii in range(4):
+            # TODO: switch x and y when angle is fixed to CCW from x-axis
+            x1 = hitbox[ii, 0]
+            y1 = hitbox[ii, 1]
+            x2 = hitbox[ii+1, 0]
+            y2 = hitbox[ii+1, 1]
+            if x1 >= 0 or x2 >= 0:
+                if y1 == 0 and y2 == 0:
+                    """ when both point lie on the x axis, the hit occurs at
+                    the closer to 0, or at 0 if they overlap (which would
+                    indicate a tank crash)"""
+                    dist.append(max(0, hitbox[ii:ii+1, 0].min()))
+                elif (y1 <= 0 and y2 >= 0) or (y1 >= 0 and y2 <= 0):
+                    dist.append(x1 + y1*(x2-x1)/(y2-y1))
+        if len(dist) > 0:
+            return min(dist)
+        else:
+            return None

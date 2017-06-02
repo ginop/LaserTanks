@@ -57,7 +57,7 @@ class Game():
         pg.draw.aaline(self.screen, color,
                        self.px*points[0, :], self.px*points[1, :])
 
-    def polygon(self, points, color, edge_color=None):
+    def polygon(self, points, color, edge_color=0):
         """
         PyGame polygon printing helper function
         Prints a polygon with an antialiased edge, handling conversion from
@@ -68,16 +68,18 @@ class Game():
             edge_color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]; if
                         ommitted, edge_color matches color
         """
-        if edge_color is None:
+        if edge_color is 0:
             edge_color = color
         # Invert Y coordinate so up is positive (PyGame uses down as positive)
         points[:, 1] = self.screen_height - points[:, 1]
-        gfxdraw.filled_polygon(self.screen,
-                               (self.px*points).round().astype(int), color)
-        gfxdraw.aapolygon(self.screen,
-                          (self.px*points).round().astype(int), edge_color)
+        if color is not None:
+            gfxdraw.filled_polygon(self.screen,
+                                   (self.px*points).round().astype(int), color)
+        if edge_color is not None:
+            gfxdraw.aapolygon(self.screen,
+                              (self.px*points).round().astype(int), edge_color)
 
-    def circle(self, center, radius, color, edge_color=None):
+    def circle(self, center, radius, color, edge_color=0):
         """
         PyGame circle printing helper function
         Prints a circle with an antialiased edge, handling conversion from game
@@ -89,14 +91,16 @@ class Game():
             edge_color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]; if
                         ommitted, edge_color matches color
         """
-        if edge_color is None:
+        if edge_color is 0:
             edge_color = color
-        gfxdraw.filled_circle(self.screen, int(round(self.px*center[0])),
-                              int(round(self.px*(self.screen_height-center[1]))),
-                              int(round(self.px*radius)), color)
-        gfxdraw.aacircle(self.screen, int(round(self.px*center[0])),
-                         int(round(self.px*(self.screen_height-center[1]))),
-                         int(round(self.px*radius)), edge_color)
+        if color is not None:
+            gfxdraw.filled_circle(self.screen, int(round(self.px*center[0])),
+                                  int(round(self.px*(self.screen_height-center[1]))),
+                                  int(round(self.px*radius)), color)
+        if edge_color is not None:
+            gfxdraw.aacircle(self.screen, int(round(self.px*center[0])),
+                             int(round(self.px*(self.screen_height-center[1]))),
+                             int(round(self.px*radius)), edge_color)
 
     def run(self):
         clock = pg.time.Clock()
@@ -129,8 +133,8 @@ class Game():
                             if them is not me] for me in self.tanks]
             [T.update(dt, time, P) for T, P in zip(self.tanks, public_info)]
             [T.move(dt) for T in self.tanks]
+            self.detect_hits(dt)
             [T.draw() for T in self.tanks if T.hull > 0]
-
             actual_fps = clock.get_fps()
             self.text("FPS: {:.2f}".format(actual_fps),
                       (1/4, self.screen_height-1/4), (255, 255, 255))
@@ -141,10 +145,47 @@ class Game():
         pg.quit()
         quit()
 
+    def detect_hits(self, dt):
+        """ For each tank, search for a hit on each other tank. Keep only the
+        first (closest) hit."""
+        for shooter in self.tanks:
+            laser = shooter.get_beam()
+            if laser is not None:
+                targets = [tank for tank in self.tanks if tank is not shooter]
+                dist = []
+                hit = []
+                for target in targets:
+                    x = target.detect_hit(laser)
+                    if x is not None:
+                        dist.append(x)
+                        hit.append(target)
+                if len(dist) > 0:
+                    laser_length = min(dist)
+                    hit = hit[dist.index(laser_length)]
+                    hit.hull -= dt*shooter.damage
+                    if hit.hull <= 0:
+                        self.tanks.remove(hit)
+                    shooter.laser_length = laser_length
+                else:  # back to default, really-long laser_length
+                    shooter.laser_length = Tank.laser_length
+
 
 if __name__ is "__main__":
-    R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
+
+    """R = Tank(testControls.R, (200, 25, 0), [26., 11.], [-45., -45.])
     G = Tank(testControls.G, (0, 195, 25), [3., 3.], [24., 11.])
     B = Tank(testControls.B, (0, 50, 255), [12., 16.], [95., 15.])
+    game = Game(tanks=[R, G, B])"""
+
+    R = Tank(testControls.shooty, (200, 25, 0), [3, 20.], [0., 0.])
+    G = Tank(testControls.shooty, (0, 195, 25), [20, 20.5], [45., -45.])
+    B = Tank(testControls.shooty, (0, 50, 255), [37, 20.8], [90., 90.])
+    # game = Game(tanks=[R, B])
     game = Game(tanks=[R, G, B])
+
+    """R = Tank(testControls.dummy, (200, 25, 0), [3., 3.], [45., 0.])
+    G = Tank(testControls.dummy, (0, 195, 25), [20.5, 20.], [90., -45.])
+    B = Tank(testControls.dummy, (0, 50, 255), [37., 37.5], [-45., -90.])
+    game = Game(tanks=[R, G, B])"""
+
     game.run()

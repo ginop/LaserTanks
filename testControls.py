@@ -12,6 +12,18 @@ Controller outputs:
     shoot (logical to fire laser, ignored while recharging)
 """
 
+def dummy(t, Tank, info):
+    drive = np.array([0., 0.])
+    spin = 0.
+    shoot = False
+    return drive, spin, shoot
+
+def shooty(t, Tank, info):
+    drive = np.array([0., 0.])
+    spin = 0.
+    shoot = True
+    return drive, spin, shoot
+    
 
 def R(t, Tank, info):
     drive = np.array([4., 1.])
