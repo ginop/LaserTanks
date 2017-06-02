@@ -1,5 +1,6 @@
 import numpy as np
 from math import pi
+from importlib import import_module
 
 
 def rotate(points, angle):
@@ -37,12 +38,13 @@ class Tank():
 
     laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
-    damage = 10.  # HP per sec
+    damage = 50.  # HP per sec
     reload_time = 1.
 
     def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
         self.game = None
-        self.control = control
+        # Load named module and instantiate object of class with same name
+        self.control = import_module(control).__dict__[control]()
         self.position = np.array(pos).astype(float)
         self.orientation = np.array(orient)
         self.velocity = np.array([0, 0]).astype(float)
@@ -119,9 +121,10 @@ class Tank():
             center = [center*np.cos(a), center*np.sin(a)] + self.position
             self.game.circle(center, self.blast_radius, self.color)
 
-    def update(self, dt, t, info):
-        self.drive, self.spin, self.shoot = self.control(t, Tank, info)
-
+    def update(self, dt, t, target_info):
+        self.drive, self.spin, self.shoot = self.control.main(t, Tank,
+                                                              self.public(),
+                                                              target_info)
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
             self.shoot = False
@@ -139,11 +142,11 @@ class Tank():
         self.orientation[1] += self.spin*dt
         a = self.orientation[0]*pi/180  # for brevity below
         if w == 0.0:
-            self.position[0] += dt*v*np.sin(a)
-            self.position[1] += dt*v*np.cos(a)
+            self.position[1] += dt*v*np.sin(a)
+            self.position[0] += dt*v*np.cos(a)
         else:
-            self.position[0] -= v/w*(np.cos(a+w*dt)-np.cos(a))
-            self.position[1] += v/w*(np.sin(a+w*dt)-np.sin(a))
+            self.position[1] -= v/w*(np.cos(a+w*dt)-np.cos(a))
+            self.position[0] += v/w*(np.sin(a+w*dt)-np.sin(a))
             self.orientation[0] += w*dt*180/pi
 
     def public(self):
