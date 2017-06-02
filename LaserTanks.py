@@ -1,3 +1,5 @@
+#!python3
+
 import numpy as np
 import pygame as pg
 # gfxdraw is a submodule (a child directory in the pygame folder) so it must be
@@ -95,11 +97,13 @@ class Game():
             edge_color = color
         if color is not None:
             gfxdraw.filled_circle(self.screen, int(round(self.px*center[0])),
-                                  int(round(self.px*(self.screen_height-center[1]))),
+                                  int(round(self.px *
+                                            (self.screen_height-center[1]))),
                                   int(round(self.px*radius)), color)
         if edge_color is not None:
             gfxdraw.aacircle(self.screen, int(round(self.px*center[0])),
-                             int(round(self.px*(self.screen_height-center[1]))),
+                             int(round(self.px *
+                                       (self.screen_height-center[1]))),
                              int(round(self.px*radius)), edge_color)
 
     def run(self):

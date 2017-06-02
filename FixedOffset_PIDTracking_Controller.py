@@ -25,7 +25,7 @@ def rotate(points, angle):
 class FixedOffset_PIDTracking_Controller(LaserTankController):
 
     def __init__(self):
-        self.pid = PID(1., 1., 1.)
+        self.pid = PID(1., 0.5, 0.2)
 
     def main(self, t, Tank, me, them):
         if len(them) == 0:
@@ -51,10 +51,17 @@ class FixedOffset_PIDTracking_Controller(LaserTankController):
 
         vec = them['position'] - me['position']
         angle = np.arctan2(vec[1], vec[0])*180/pi - me['orientation'][0]
-        d_angle = (angle - me['orientation'][1] + 180) % 360 - 180  # in +-180
-        spin = self.pid.step(d_angle)
 
-        return drive, spin, True
+        d_angle = angle - me['orientation'][1]
+        d_angle = (d_angle + 180) % 360 - 180  # in +-180
+        total_spin = self.pid.step(d_angle)
+
+        # Command turret spin to compensate for body spin
+        spread = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
+        body_spin = (drive[1] - drive[0])/spread
+        turret_spin = total_spin - body_spin
+
+        return drive, turret_spin, True
 
 
 class PID():
