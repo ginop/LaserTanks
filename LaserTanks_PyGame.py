@@ -134,7 +134,8 @@ class Game():
             [T.update(dt, time, P) for T, P in zip(self.tanks, public_info)]
             [T.move(dt) for T in self.tanks]
             self.detect_hits(dt)
-            [T.draw() for T in self.tanks if T.hull > 0]
+            [T.draw() for T in self.tanks]
+            [T.draw_laser() for T in self.tanks]
             actual_fps = clock.get_fps()
             self.text("FPS: {:.2f}".format(actual_fps),
                       (1/4, self.screen_height-1/4), (255, 255, 255))

@@ -105,22 +105,19 @@ class Tank():
         self.game.text("{:.0f}".format(self.hull), self.position,
                        (0, 0, 0), centered=True)
 
+    def draw_laser(self):
         # draw laser if shooting (indicated by time_to_read above reload_time)
-        # TODO: Implement hit checking and update laser drawing accordingly
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         if self.time_to_ready > self.reload_time:
             laser = (u * [self.laser_length, self.laser_width] +
                      [self.barrel_length + self.laser_length/2, 0])
             laser = rotate(laser, self.orientation[0]+self.orientation[1])
             laser += self.position
-            self.game.polygon(laser, self.color, (255, 255, 255))
-            """
-            self.game.circle(laser[0, :], self.laser_width/2, None, (255, 255, 255))
-            self.game.circle(laser[1, :], self.blast_radius, None, (255, 255, 255))
-            self.game.polygon(laser, None, (255, 255, 255))
-            self.game.circle(laser[0, :], self.laser_width/2, self.color, None)
-            self.game.circle(laser[1, :], self.blast_radius, self.color, None)
-            self.game.polygon(laser, self.color, None)
-            """
+            self.game.polygon(laser, self.color)
+            center = self.barrel_length + self.laser_length
+            a = (self.orientation[0]+self.orientation[1])*pi/180
+            center = [center*np.cos(a), center*np.sin(a)] + self.position
+            self.game.circle(center, self.blast_radius, self.color)
 
     def update(self, dt, t, info):
         self.drive, self.spin, self.shoot = self.control(t, Tank, info)
