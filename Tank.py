@@ -159,7 +159,10 @@ class Tank():
                 "orientation": self.orientation,
                 "drive": self.drive,
                 "spin": self.spin,
-                "is_firing": self.time_to_ready > self.reload_time,
+                "is_firing": self.shoot,
+                "time_to_ready": self.time_to_ready,
+                "hull": self.hull,
+                "battery": self.battery,
                 "color": self.color}
 
     def get_beam(self):

@@ -64,12 +64,12 @@ class FixedOffsetController(LaserTankController):
         forwardBias = activationFcn(dist)
         targetDrive = speed * np.array([forwardBias + diff,
                                         forwardBias - diff])
-        throttle = 2 * activationFcn(targetDrive - me['drive']) - 1
+#        throttle = 2 * activationFcn(targetDrive - me['drive']) - 1
 
         vec = them['position'] - me['position']
         angle = np.arctan2(vec[1], vec[0])*180/pi - me['orientation'][0]
         d_angle = (angle - me['orientation'][1] + 180) % 360 - 180  # [-180, 180]
         targetSpin = 2. * d_angle
-        torque = 2 * activationFcn(targetSpin - me['spin']) - 1
+#        torque = 2 * activationFcn(targetSpin - me['spin']) - 1
 
-        return [throttle, torque], True
+        return targetDrive, targetSpin, True
