@@ -74,11 +74,10 @@ class Waypoint_PID_Controller(LaserTankController):
         # Command turret spin with compensation for body spin
         turret_spin = total_spin - me["spin"]
 
-        # Fire when aim is close enough and steady
+        # Fire when aim is close enough
         # but not during a turn or too close to a waypoint update
         ttg = (dist-d_thresh) / me["speed"]
-        fire = (abs(d_angle) < 4 and abs(me["turret_spin"]) < 60 and
-                abs(me["spin"]) < 15 and ttg > 1.0)
+        fire = (abs(d_angle) < 4 and 0 < abs(me["spin"]) < 15 and ttg > 1.0)
 
         return drive, turret_spin, fire
 
@@ -90,6 +89,11 @@ def waypoint():
     pts = [(5, 5), (35, 5), (35, 35), (5, 35)]
     for point in cycle(pts):
         yield np.array(point)
+
+
+def random_waypoint():
+    while True:
+        yield np.random.rand(2) * 36. + 2.
 
 
 class PID():

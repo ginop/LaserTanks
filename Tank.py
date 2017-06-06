@@ -39,7 +39,7 @@ class Tank():
 
     laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
-    damage = 50.  # HP per sec
+    damage = 10.  # HP per sec
     reload_time = 1.
 
     def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
@@ -306,12 +306,11 @@ class Tank():
         Inputs:
             laser: a tuple of origin and angle (x, y, angle)
         Outputs:
-            dist: distance from laser origin to impact point, [] if no impact
+            dist: distance from laser origin to impact point, None if no impact
         """
         # Determine hitbox for tank (just use body, not treads, for simplicity)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         hitbox = u * [self.body_length, self.body_width]
-        # import pdb; pdb.set_trace()
         hitbox = rotate(hitbox, self.orientation[0])
         hitbox += self.position
         # Translate laser to origin
@@ -322,19 +321,18 @@ class Tank():
         hitbox = np.vstack((hitbox, hitbox[0, :]))
         dist = []
         for ii in range(4):
-            # TODO: switch x and y when angle is fixed to CCW from x-axis
             x1 = hitbox[ii, 0]
             y1 = hitbox[ii, 1]
             x2 = hitbox[ii+1, 0]
             y2 = hitbox[ii+1, 1]
             if x1 >= 0 or x2 >= 0:
                 if y1 == 0 and y2 == 0:
-                    """ when both point lie on the x axis, the hit occurs at
-                    the closer to 0, or at 0 if they overlap (which would
-                    indicate a tank crash)"""
+                    """when both points lie on the x axis, the hit occurs at
+                    the lower non-negative number, or at 0 if one is negative
+                    (which would indicate a tank crash)"""
                     dist.append(max(0, hitbox[ii:ii+1, 0].min()))
                 elif (y1 <= 0 and y2 >= 0) or (y1 >= 0 and y2 <= 0):
-                    dist.append(x1 + y1*(x2-x1)/(y2-y1))
+                    dist.append(max(0, x1 + y1*(x2-x1)/(y2-y1)))
         if len(dist) > 0:
             return min(dist)
         else:
