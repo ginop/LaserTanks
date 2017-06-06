@@ -3,6 +3,7 @@ from math import pi
 from importlib import import_module
 from scipy.integrate import quad
 
+
 def rotate(points, angle):
     """
     A helper function for 2D rotations.
@@ -47,16 +48,15 @@ class Tank():
         self.control = import_module(control).__dict__[control]()
 
         self.position = np.array(pos).astype(float)
-        self.orientation = np.array(orient)
+        self.orientation = np.array(orient).astype(float)
         self.speed = 0.
         self.spin = 0.
 
         self.drive = np.array([0., 0.])  # normalized L, R tread force (in +-1)
-        self.tread_speed = np.array([0., 0.])
         self.tread_offset = np.array([0., 0.])  # for animating treads
 
         self.turret_torque = 0.  # normalized turret torque (in +-1)
-        self.turret_spin = 0.  # commanded turret spin in degrees per sec
+        self.turret_spin = 0.  # turret spin in degrees per sec
 
         self.shoot = False  # command to fire laser
         self.time_to_ready = self.reload_time
@@ -129,17 +129,18 @@ class Tank():
             self.game.circle(center, self.blast_radius, self.color)
 
     def update(self, dt, t, target_info):
-        self.drive, self.spin, self.shoot = self.control.main(t, Tank,
-                                                              self.public(),
-                                                              target_info)
+        (self.drive,
+         self.turret_torque,
+         self.shoot) = self.control.main(t, Tank, self.info(), target_info)
         if (abs(self.drive[0]) > 1 or abs(self.drive[1]) > 1 or
-           abs(self.spin) > 1):
+           abs(self.turret_torque) > 1):
             from warnings import warn
-            warn("Tank controller outputs for tread and turret" +
+            warn("Tank controller outputs for tread and turret " +
                  "torque should all be between -1 and 1!")
             self.drive[0] = min(max(-1, self.drive[0]), 1)
             self.drive[1] = min(max(-1, self.drive[1]), 1)
-            self.spin = min(max(-1, self.spin), 1)
+            self.turret_torque = min(max(-1, self.turret_torque), 1)
+
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
             self.shoot = False
@@ -147,20 +148,27 @@ class Tank():
             self.time_to_ready = Tank.reload_time + self.laser_dur
 
     def move(self, dt):
-        # From Nutaro, Table 2.1
-        m = 0.8  # kg
+        # Modeled After Nutaro, Table 2.1
+        m = 0.1  # kg
         J = 5e-4  # kg m**2
         B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
-        Br = 1.  # Rolling friction, N s / m
-        Bs = 14.  # Sliding friction, N s / m
+        Br = 1.0  # Rolling friction, N s / m
+        Bs = 14.*0  # Sliding friction, N s / m
         Bl = 0.7  # Turning friction, N m s / rad
-        Sl = 0.3  # Lateral friction, N m
+        Sl = 0.3*0  # Lateral friction, N m
+        # For turret direction
+        Jt = 5e-5  # kg m**2
+        Bt = 0.02  # Turning friction, N m s / rad
+        St = 0.01*0  # Sticking threshold, N m
         # Scale normalized inputs to physical values
         tread_force_max = 5.  # N
         Fl = self.drive[0] * tread_force_max
         Fr = self.drive[1] * tread_force_max
+        turret_torque_max = 0.1  # N m
+        Ft = self.turret_torque * turret_torque_max
         # Tank only turns if relative tread force can overcome lateral friction
-        if -Sl < (Fr - Fl) * B / 2 < Sl:
+        # Static friction is relevant only when tank is turning slowly enough
+        if abs((Fr-Fl)*B/2) < Sl and abs(self.spin) < 2.:
             # Not turning
             # Solve diff. eq. to get non-linear function for speed, v(t)
             # dv/dt = (Fl+Fr-Br*v)/m
@@ -171,16 +179,17 @@ class Tank():
             # t = m/Br*log(Fl+Fr-Br*v0) - m/B*log(Fl+Fr-Br*v)
             # t = -m/Br*log((Fl+Fr-Br*v)/(Fl+Fr-Br*v0))
             # v = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            A = (Fr + Fl) / Br
             v0 = self.speed
-            self.speed = A + (v0 - A) * np.exp(-Br * dt / m)
+            v1 = (Fr + Fl) / Br  # steady-state speed
+            tauv = m/Br
+            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
             # Integrate to get path length
             # v = dr/dt = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
             # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*exp(-Br*t/m) + C
             # Using initial condition r(0) = 0
             # C = -m/Br*(v0-(Fl+Fr)/Br)
             # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*(exp(-Br*t/m)-1)
-            r = A * dt + m / Br * (v0/Br - A) * (np.exp(-Br * dt / m) - 1)
+            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
             # Rotate path length into coordinate frame
             a = self.orientation[0]*pi/180
             self.position[0] += r * np.cos(a)
@@ -199,11 +208,11 @@ class Tank():
             #     (v0-(Fl+Fr)/(Br+Bs))*exp(-(Br+Bs)*t/m)
             # r = t*(Fl+Fr)/(Br+Bs) +
             #     m/(Br+Bs)*(v0-(Fl+Fr)/Br)*(exp(-(Br+Bs)*t/m)-1)
-            A = (Fr + Fl) / (Br + Bs)
             v0 = self.speed
-            self.speed = A + (v0 - A) * np.exp(-(Br+Bs) * dt / m)
-            r = (A * dt + m / (Br + Bs) * (v0/(Br + Bs) - A) *
-                 (np.exp(-(Br + Bs) * dt / m) - 1))
+            v1 = (Fr + Fl) / (Br + Bs)
+            tauv = m/(Br+Bs)
+            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
+            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
             # Solve diff. eq. to get angular rate, w
             # dw/dt = ((Fl-Fr)*B/2 - Bl*w)/J
             # dt = J*dw/(B/2*(Fl-Fr)-Bl*w)
@@ -211,16 +220,18 @@ class Tank():
             # Using initial condition w(0) = w0
             # C = J/Bl*log(B*(Fl-Fr)-2*Bl*w0)
             # t = -J/Bl*log((B*(Fl-Fr)-2*Bl*w)/(B*(Fl-Fr)-2*Bl*w0))
-            # w = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
-            A = B/2*(Fl-Fr)
-            w0 = self.spin
-            self.spin = (A - (A - Bl*w0) * np.exp(-Bl*dt/J)) / Bl
-            # Integrate to get orientation, a
+            # w = B/2*(Fl-Fr)/Bl-(B/2*(Fl-Fr)/Bl-w0)*exp(-Bl*t/J)
+            w1 = B/2*(Fr-Fl)/Bl
+            w0 = self.spin * pi/180
+            tauw = J/Bl
+            self.spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
+            # Integrate to get change in orientation, a
             # w = da/dt = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
             # a = (B/2*(Fl-Fr)*t +
             #     (B/2*(Fl-Fr)/Bl*J-w0*J)*exp(-Bl*t/J))/Bl
-            self.orientation[0] = (A*dt + J*(A/Bl - w0) *
-                                   np.exp(-Bl*dt/J))/Bl
+            theta0 = self.orientation[0] * pi/180
+            dtheta = w1*dt - tauw * (w1 - w0) * (1 - np.exp(-dt/tauw))
+            self.orientation[0] += dtheta * 180/pi
             # Calculate for x and y displacement
             # dx/dt = v(t) * cos(a(t)) : differs in convention from Nutaro
             # A0 = (Fl+Fr)/(Br+Bs)
@@ -232,16 +243,14 @@ class Tank():
             # dy/dt = v(t) * sin(a(t))
 
             def dxdt(t):
-                A0 = (Fl+Fr)/(Br+Bs)
-                A1 = B/2*(Fl-Fr)/Bl
-                return ((A0 - (v0-A0)*np.exp(-(Br+Bs)*t/m)) *
-                        np.cos(A1*t + (A1/Bl*J-w0*J/Bl)*np.exp(-Bl*t/J)))
+                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
+                        np.cos(theta0 + w1*t -
+                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
 
             def dydt(t):
-                A0 = (Fl+Fr)/(Br+Bs)
-                A1 = B/2*(Fl-Fr)/Bl
-                return ((A0 - (v0-A0)*np.exp(-(Br+Bs)*t/m)) *
-                        np.sin(A1*t + (A1/Bl*J-w0*J/Bl)*np.exp(-Bl*t/J)))
+                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
+                        np.sin(theta0 + w1*t -
+                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
 
             x, err = quad(dxdt, 0, dt)
             y, err = quad(dydt, 0, dt)
@@ -249,25 +258,32 @@ class Tank():
             self.position[1] += y
 
             # Calculate each tread rotation
-            # vl = v - B*w/2
-            # A0 = (Fl+Fr)/(Br+Bs)
-            # A1 = B/2*(Fl-Fr)/Bl
-            # vl = A0 - (v0-A0)*exp(-(Br+Bs)*t/m) -
-            #      B/2*(A1-(A1-w0)*exp(-Bl*t/J))
-            # drl/dr = vl
-            # rl = (A0-B/2*A1)*t + m*(v0-A0)/(Br+Bs)*exp(-(Br+Bs)*t/m) -
-            #      B/2*(A1-w0)*J/Bl*exp(-Bl*t/J)
-            # vr = v + B*w/2
-            # rr = (A0+B/2*A1)*t + m*(v0-A0)/(Br+Bs)*exp(-(Br+Bs)*t/m) +
-            #      B/2*(A1-w0)*J/Bl*exp(-Bl*t/J)
-            A0 = (Fl+Fr)/(Br+Bs)
-            A1 = B/2*(Fl-Fr)/Bl
-            self.tread_offset[0] += ((A0-B/2*A1)*dt +
-                                     m*(v0-A0)/(Br+Bs)*np.exp(-(Br+Bs)*dt/m) -
-                                     B/2*(A1-w0)*J/Bl*np.exp(-Bl*dt/J))
-            self.tread_offset[1] += ((A0+B/2*A1)*dt +
-                                     m*(v0-A0)/(Br+Bs)*np.exp(-(Br+Bs)*dt/m) +
-                                     B/2*(A1-w0)*J/Bl*np.exp(-Bl*dt/J))
+            self.tread_offset[0] += r - dtheta*B/2
+            self.tread_offset[1] += r + dtheta*B/2
+
+        # Turret can spin if already spinning or if force can break sticking
+        if abs(Ft) > St or self.turret_spin > 2.:
+            # Turret can turn
+            # Following equations for tank body turning
+            # TODO add forces from turning of body
+            w1 = Ft/Bt
+            w0 = self.turret_spin * pi/180
+            tauw = Jt/Bt
+            self.turret_spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
+            theta0 = self.orientation[1] * pi/180
+            self.orientation[1] += (w1*dt - tauw * (w1 - w0) *
+                                    (1 - np.exp(-dt/tauw))) * 180/pi
+
+    def info(self):
+        return {"position": self.position,
+                "orientation": self.orientation,
+                "is_firing": self.time_to_ready > self.reload_time,
+                "color": self.color,
+                "spin": self.spin,
+                "speed": self.speed,
+                "turret_spin": self.turret_spin,
+                "hull": self.hull,
+                "battery": self.battery}
 
     def public(self):
         return {"position": self.position,

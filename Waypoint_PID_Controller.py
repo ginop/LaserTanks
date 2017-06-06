@@ -27,25 +27,28 @@ class Waypoint_PID_Controller(LaserTankController):
     def __init__(self):
         self.waypoint_gen = waypoint()
         self.destination = next(self.waypoint_gen)
-        self.drive_pid = PID(1., 0.5, 0.2)
-        self.aim_pid = PID(1., 0.5, 0.2)
+        self.drive_pid = PID(0.1, 0.001, 0.01)
+        self.aim_pid = PID(1.0, 0.01, 0.1)
 
     def main(self, t, Tank, me, them):
         if len(them) == 0:
-            return(np.array([0., 0.]), 0., False)
+            them = [{"position": np.array([20., 20.])}]
 
         them = them[0]  # only concerned with one target
 
+        # import pdb; pdb.set_trace()
         # Use a PID controller to keep the tank pointed to the next waypoint
         vec = self.destination - me['position']
         dist = np.sqrt(vec.dot(vec))
         angle = np.arctan2(vec[1], vec[0])*180/pi - me['orientation'][0]
-        if dist < 5:  # get next waypoint
+        d_thresh = 2.
+        if dist < d_thresh:  # get next waypoint
             self.destination = next(self.waypoint_gen)
             vec = self.destination - me['position']
             dist = np.sqrt(vec.dot(vec))
             angle = np.arctan2(vec[1], vec[0])*180/pi - me['orientation'][0]
-            # Should we reset the PID controller here?
+
+        angle = (angle + 180) % 360 - 180  # in +-180
         w = self.drive_pid.step(angle)
         # Drive as fast as possible without saturating either tread drive
         B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
@@ -56,7 +59,7 @@ class Waypoint_PID_Controller(LaserTankController):
                 drive[0] = 1 - B*w
             else:
                 drive[0] = 1
-                drive[1] = 1 - B*w
+                drive[1] = 1 + B*w
         else:
             drive[0] = -np.sign(w)
             drive[1] = np.sign(w)
@@ -67,12 +70,16 @@ class Waypoint_PID_Controller(LaserTankController):
         # Determine difference between aim and desired aim for PID controller
         d_angle = angle - me['orientation'][1]
         d_angle = (d_angle + 180) % 360 - 180  # in +-180
+        print(angle, d_angle)
         total_spin = self.aim_pid.step(d_angle)
         # Command turret spin with compensation for body spin
-        turret_spin = total_spin - 0.  # TODO add me.omega
+        turret_spin = total_spin - me["spin"]
 
-        # Fire when aim is right
-        fire = d_angle < 2
+        # Fire when aim is close enough and steady
+        # but not during a turn or too close to a waypoint update
+        ttg = (dist-d_thresh) / me["speed"]
+        fire = (abs(d_angle) < 4 and abs(me["turret_spin"]) < 60 and
+                abs(me["spin"]) < 15 and ttg > 1.0)
 
         return drive, turret_spin, fire
 
@@ -100,3 +107,7 @@ class PID():
         dx = x - self.lastx
         self.lastx = x
         return self.P * x + self.I * self.ix + self.D * dx
+
+    def reset(self):
+        self.ix = 0
+        self.lastx = 0

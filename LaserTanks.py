@@ -153,6 +153,7 @@ class Game():
             self.text("FPS: {:.2f}".format(actual_fps),
                       (1/4, self.screen_height-1/4), (255, 255, 255))
 
+            clock.tick(fps)  # limit fps
             pg.display.flip()
 
         pg.display.quit()
@@ -189,8 +190,8 @@ if __name__ == "__main__":
     screen_width = 40
     screen_height = 40
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
-             [screen_width/4, screen_height/2], [90, 0])
-    B = Tank('LaserTankController', (0, 50, 255),
+             [screen_width/8, screen_height/2], [-90, 0])
+    B = Tank('SimpleController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
                 screen_height=screen_height)
