@@ -70,7 +70,6 @@ class Waypoint_PID_Controller(LaserTankController):
         # Determine difference between aim and desired aim for PID controller
         d_angle = angle - me['orientation'][1]
         d_angle = (d_angle + 180) % 360 - 180  # in +-180
-        print(angle, d_angle)
         total_spin = self.aim_pid.step(d_angle)
         # Command turret spin with compensation for body spin
         turret_spin = total_spin - me["spin"]
