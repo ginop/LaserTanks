@@ -10,7 +10,7 @@ from Tank import Tank
 
 class Game():
 
-    def __init__(self, tanks=[], px=20, screen_width=40, screen_height=40):
+    def __init__(self, tanks=[], px=20, screen_width=40, screen_height=40, real_time=True):
         for tank in tanks:
             tank.game = self
         self.tanks = tanks
@@ -18,6 +18,7 @@ class Game():
         self.px = px  # pixels per game unit
         self.screen_width = screen_width  # in game unites
         self.screen_height = screen_height  # in game units
+        self.real_time = real_time
 
         self.screen = pg.display.set_mode((self.screen_width*self.px,
                                            self.screen_height*self.px))
@@ -112,18 +113,12 @@ class Game():
         fps = 60
         time = 0
 
-        fps = 60
+        dt = 0.01
+
         while running:
 
-            clock.tick(fps)  # limit fps
-            dt = clock.get_time()/1000  # convert msec to sec
-            time += dt
-
-            # End loop when window is closed
-            for event in pg.event.get():
-                # print(event)
-                if event.type == pg.QUIT:
-                    running = False
+            if self.real_time:
+                clock.tick(fps)  # limit fps
 
             # set the scene
             self.screen.fill((50, 50, 50))
@@ -133,11 +128,25 @@ class Game():
                                    (round(self.px*(x+1/2)),
                                     round(self.px*(y+1/2))), round(self.px/10))
 
-            public_info = [[them.public() for them in self.tanks
-                            if them is not me] for me in self.tanks]
-            [T.update(dt, time, P) for T, P in zip(self.tanks, public_info)]
-            [T.move(dt) for T in self.tanks]
-            self.detect_hits(dt)
+            # Decoupled dt from real-time display. This way it can be much
+            # faster and deterministic.
+            # dt = clock.get_time()/1000  # convert msec to sec
+            next_time = time + 1/fps
+            while time < next_time:
+                time += dt
+
+                # End loop when window is closed
+                for event in pg.event.get():
+                    # print(event)
+                    if event.type == pg.QUIT:
+                        running = False
+
+                public_info = [[them.public() for them in self.tanks
+                                if them is not me] for me in self.tanks]
+                [T.update(dt, time, P) for T, P in zip(self.tanks, public_info)]
+                [T.move(dt) for T in self.tanks]
+                self.detect_hits(dt)
+
             [T.draw() for T in self.tanks]
             [T.draw_laser() for T in self.tanks]
             actual_fps = clock.get_fps()
@@ -179,9 +188,9 @@ if __name__ == "__main__":
 
     screen_width = 40
     screen_height = 40
-    R = Tank('FixedOffset_PIDTracking_Controller', (200, 25, 0),
+    R = Tank('Waypoint_PID_Controller', (200, 25, 0),
              [screen_width/4, screen_height/2], [90, 0])
-    B = Tank('FixedOffsetController', (0, 50, 255),
+    B = Tank('LaserTankController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
                 screen_height=screen_height)

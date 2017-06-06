@@ -1,7 +1,7 @@
 import numpy as np
 from math import pi
 from importlib import import_module
-
+from scipy.integrate import quad
 
 def rotate(points, angle):
     """
@@ -45,19 +45,26 @@ class Tank():
         self.game = None
         # Load named module and instantiate object of class with same name
         self.control = import_module(control).__dict__[control]()
+
         self.position = np.array(pos).astype(float)
         self.orientation = np.array(orient)
-        self.velocity = np.array([0, 0]).astype(float)
-        self.drive = np.array([0., 0.])  # L and R tread speed in units/sec
+        self.speed = 0.
+        self.spin = 0.
+
+        self.drive = np.array([0., 0.])  # normalized L, R tread force (in +-1)
+        self.tread_speed = np.array([0., 0.])
         self.tread_offset = np.array([0., 0.])  # for animating treads
-        self.spin = 0.  # commanded turret spin in degrees per sec
+
+        self.turret_torque = 0.  # normalized turret torque (in +-1)
+        self.turret_spin = 0.  # commanded turret spin in degrees per sec
+
         self.shoot = False  # command to fire laser
         self.time_to_ready = self.reload_time
+        self.laser_length = Tank.laser_length  # made shorter on hit
+
         self.hull = 100.
         self.battery = 100.
         self.color = color
-        self.laser_length = Tank.laser_length  # made shorter on hit
-        # self.shield = None
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed right)
@@ -125,6 +132,14 @@ class Tank():
         self.drive, self.spin, self.shoot = self.control.main(t, Tank,
                                                               self.public(),
                                                               target_info)
+        if (abs(self.drive[0]) > 1 or abs(self.drive[1]) > 1 or
+           abs(self.spin) > 1):
+            from warnings import warn
+            warn("Tank controller outputs for tread and turret" +
+                 "torque should all be between -1 and 1!")
+            self.drive[0] = min(max(-1, self.drive[0]), 1)
+            self.drive[1] = min(max(-1, self.drive[1]), 1)
+            self.spin = min(max(-1, self.spin), 1)
         self.time_to_ready -= dt
         if self.time_to_ready > 0.:
             self.shoot = False
@@ -132,22 +147,127 @@ class Tank():
             self.time_to_ready = Tank.reload_time + self.laser_dur
 
     def move(self, dt):
-        # forward motion is average of tread speeds
-        v = (self.drive[0] + self.drive[1])/2
-        # relative speed in the treads causes rotation
-        spread = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
-        w = (self.drive[1] - self.drive[0])/spread
-        # motion is an arc
-        self.tread_offset += self.drive*dt
-        self.orientation[1] += self.spin*dt
-        a = self.orientation[0]*pi/180  # for brevity below
-        if w == 0.0:
-            self.position[1] += dt*v*np.sin(a)
-            self.position[0] += dt*v*np.cos(a)
+        # From Nutaro, Table 2.1
+        m = 0.8  # kg
+        J = 5e-4  # kg m**2
+        B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
+        Br = 1.  # Rolling friction, N s / m
+        Bs = 14.  # Sliding friction, N s / m
+        Bl = 0.7  # Turning friction, N m s / rad
+        Sl = 0.3  # Lateral friction, N m
+        # Scale normalized inputs to physical values
+        tread_force_max = 5.  # N
+        Fl = self.drive[0] * tread_force_max
+        Fr = self.drive[1] * tread_force_max
+        # Tank only turns if relative tread force can overcome lateral friction
+        if -Sl < (Fr - Fl) * B / 2 < Sl:
+            # Not turning
+            # Solve diff. eq. to get non-linear function for speed, v(t)
+            # dv/dt = (Fl+Fr-Br*v)/m
+            # dt = m*dv/(Fl+Fr-Br*v)
+            # t = -m/Br*log(Fl+Fr-Br*v) + C
+            # Using initial condition v(0) = v0
+            # C = m/Br*log(Fl+Fr-Br*v0)
+            # t = m/Br*log(Fl+Fr-Br*v0) - m/B*log(Fl+Fr-Br*v)
+            # t = -m/Br*log((Fl+Fr-Br*v)/(Fl+Fr-Br*v0))
+            # v = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
+            A = (Fr + Fl) / Br
+            v0 = self.speed
+            self.speed = A + (v0 - A) * np.exp(-Br * dt / m)
+            # Integrate to get path length
+            # v = dr/dt = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
+            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*exp(-Br*t/m) + C
+            # Using initial condition r(0) = 0
+            # C = -m/Br*(v0-(Fl+Fr)/Br)
+            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*(exp(-Br*t/m)-1)
+            r = A * dt + m / Br * (v0/Br - A) * (np.exp(-Br * dt / m) - 1)
+            # Rotate path length into coordinate frame
+            a = self.orientation[0]*pi/180
+            self.position[0] += r * np.cos(a)
+            self.position[1] += r * np.sin(a)
+            self.spin = 0.
+            # Calculate each tread rotation
+            # vl = vr = v
+            # dl = dr = r
+            self.tread_offset[0] += r
+            self.tread_offset[1] += r
         else:
-            self.position[1] -= v/w*(np.cos(a+w*dt)-np.cos(a))
-            self.position[0] += v/w*(np.sin(a+w*dt)-np.sin(a))
-            self.orientation[0] += w*dt*180/pi
+            # Is turning
+            # dv/dt = (Fl+Fr-(Br+Bs)*v)/m
+            # Substitute (Br+Bs) for Br in non-turning equations
+            # v = (Fl+Fr)/(Br+Bs) -
+            #     (v0-(Fl+Fr)/(Br+Bs))*exp(-(Br+Bs)*t/m)
+            # r = t*(Fl+Fr)/(Br+Bs) +
+            #     m/(Br+Bs)*(v0-(Fl+Fr)/Br)*(exp(-(Br+Bs)*t/m)-1)
+            A = (Fr + Fl) / (Br + Bs)
+            v0 = self.speed
+            self.speed = A + (v0 - A) * np.exp(-(Br+Bs) * dt / m)
+            r = (A * dt + m / (Br + Bs) * (v0/(Br + Bs) - A) *
+                 (np.exp(-(Br + Bs) * dt / m) - 1))
+            # Solve diff. eq. to get angular rate, w
+            # dw/dt = ((Fl-Fr)*B/2 - Bl*w)/J
+            # dt = J*dw/(B/2*(Fl-Fr)-Bl*w)
+            # t = -J/Bl*log(B*(Fl-Fr)-2*Bl*w) + C
+            # Using initial condition w(0) = w0
+            # C = J/Bl*log(B*(Fl-Fr)-2*Bl*w0)
+            # t = -J/Bl*log((B*(Fl-Fr)-2*Bl*w)/(B*(Fl-Fr)-2*Bl*w0))
+            # w = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
+            A = B/2*(Fl-Fr)
+            w0 = self.spin
+            self.spin = (A - (A - Bl*w0) * np.exp(-Bl*dt/J)) / Bl
+            # Integrate to get orientation, a
+            # w = da/dt = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
+            # a = (B/2*(Fl-Fr)*t +
+            #     (B/2*(Fl-Fr)/Bl*J-w0*J)*exp(-Bl*t/J))/Bl
+            self.orientation[0] = (A*dt + J*(A/Bl - w0) *
+                                   np.exp(-Bl*dt/J))/Bl
+            # Calculate for x and y displacement
+            # dx/dt = v(t) * cos(a(t)) : differs in convention from Nutaro
+            # A0 = (Fl+Fr)/(Br+Bs)
+            # A1 = B/2*(Fl-Fr)/Bl
+            # dx/dt = (A0 - (v0-A0)*exp(-(Br+Bs)*t/m)) *
+            #         cos(A1*t + (A1/Bl*J-w0*J/Bl)*exp(-Bl*t/J))
+            # dx/dt may not be analytically integrable
+            # but we can solve the problem numerically
+            # dy/dt = v(t) * sin(a(t))
+
+            def dxdt(t):
+                A0 = (Fl+Fr)/(Br+Bs)
+                A1 = B/2*(Fl-Fr)/Bl
+                return ((A0 - (v0-A0)*np.exp(-(Br+Bs)*t/m)) *
+                        np.cos(A1*t + (A1/Bl*J-w0*J/Bl)*np.exp(-Bl*t/J)))
+
+            def dydt(t):
+                A0 = (Fl+Fr)/(Br+Bs)
+                A1 = B/2*(Fl-Fr)/Bl
+                return ((A0 - (v0-A0)*np.exp(-(Br+Bs)*t/m)) *
+                        np.sin(A1*t + (A1/Bl*J-w0*J/Bl)*np.exp(-Bl*t/J)))
+
+            x, err = quad(dxdt, 0, dt)
+            y, err = quad(dydt, 0, dt)
+            self.position[0] += x
+            self.position[1] += y
+
+            # Calculate each tread rotation
+            # vl = v - B*w/2
+            # A0 = (Fl+Fr)/(Br+Bs)
+            # A1 = B/2*(Fl-Fr)/Bl
+            # vl = A0 - (v0-A0)*exp(-(Br+Bs)*t/m) -
+            #      B/2*(A1-(A1-w0)*exp(-Bl*t/J))
+            # drl/dr = vl
+            # rl = (A0-B/2*A1)*t + m*(v0-A0)/(Br+Bs)*exp(-(Br+Bs)*t/m) -
+            #      B/2*(A1-w0)*J/Bl*exp(-Bl*t/J)
+            # vr = v + B*w/2
+            # rr = (A0+B/2*A1)*t + m*(v0-A0)/(Br+Bs)*exp(-(Br+Bs)*t/m) +
+            #      B/2*(A1-w0)*J/Bl*exp(-Bl*t/J)
+            A0 = (Fl+Fr)/(Br+Bs)
+            A1 = B/2*(Fl-Fr)/Bl
+            self.tread_offset[0] += ((A0-B/2*A1)*dt +
+                                     m*(v0-A0)/(Br+Bs)*np.exp(-(Br+Bs)*dt/m) -
+                                     B/2*(A1-w0)*J/Bl*np.exp(-Bl*dt/J))
+            self.tread_offset[1] += ((A0+B/2*A1)*dt +
+                                     m*(v0-A0)/(Br+Bs)*np.exp(-(Br+Bs)*dt/m) +
+                                     B/2*(A1-w0)*J/Bl*np.exp(-Bl*dt/J))
 
     def public(self):
         return {"position": self.position,
