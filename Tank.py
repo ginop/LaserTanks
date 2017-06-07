@@ -39,7 +39,7 @@ class Tank():
 
     laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
-    damage = 10.  # HP per sec
+    damage = 25.  # HP per sec
     reload_time = 1.
 
     def __init__(self, control, color, pos=[0., 0.], orient=[0., 0.]):
