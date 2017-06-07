@@ -47,9 +47,16 @@ class Tank():
         # Load named module and instantiate object of class with same name
         self.control = import_module(control).__dict__[control]()
 
+        """Traditional x (horizontal, positive to the right) and y (vertical,
+        positive up) coordinates with origin at lower left corner of arena."""
         self.position = np.array(pos).astype(float)
+        """First element is right-handed rotation of body in arena with 0 on
+        x-axis and positive angles rotating CCW. Second is similarly defined
+        angle between body an dturret, 0 is forward. In degrees."""
         self.orientation = np.array(orient).astype(float)
+        """Tank speed, always in the forward direction."""
         self.speed = 0.
+        """Rate of change of self.orientation[0]"""
         self.spin = 0.
 
         self.drive = np.array([0., 0.])  # normalized L, R tread force (in +-1)
@@ -326,13 +333,16 @@ class Tank():
             x2 = hitbox[ii+1, 0]
             y2 = hitbox[ii+1, 1]
             if x1 >= 0 or x2 >= 0:
-                if y1 == 0 and y2 == 0:
+                # testing against 0 doesn't work in all cases because of
+                # rounding errors so we test agianst this theshold instead.
+                e = 1e-12
+                if abs(y1) < e and abs(y2) < e:
                     """when both points lie on the x axis, the hit occurs at
                     the lower non-negative number, or at 0 if one is negative
                     (which would indicate a tank crash)"""
                     dist.append(max(0, hitbox[ii:ii+1, 0].min()))
-                elif (y1 <= 0 and y2 >= 0) or (y1 >= 0 and y2 <= 0):
-                    dist.append(max(0, x1 + y1*(x2-x1)/(y2-y1)))
+                elif (y1 <= e and y2 >= -e) or (y1 >= -e and y2 <= e):
+                    dist.append(max(0, x1 - y1*(x2-x1)/(y2-y1)))
         if len(dist) > 0:
             return min(dist)
         else:
