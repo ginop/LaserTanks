@@ -17,7 +17,8 @@ class Game():
 
     def __init__(self, tanks=[], px=20, screen_width=40, screen_height=40,
                  real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
-                 post_step=do_nothing, draw=True, max_time=np.inf):
+                 post_step=do_nothing, draw=True, max_time=np.inf,
+                 end_on_win=True):
         for tank in tanks:
             tank.game = self
         self.tanks = tanks
@@ -33,6 +34,9 @@ class Game():
 
         self.pre_step = pre_step
         self.post_step = post_step
+
+        self.end_on_win = end_on_win
+        self.winner = None
 
         self.draw = draw
         self.running = False
@@ -168,6 +172,11 @@ class Game():
                 # Call hook for post-step functions
                 self.post_step()
 
+                if len(self.tanks) == 1:
+                    self.winner = self.tanks[0]
+                    if self.end_on_win:
+                        self.running = False
+
                 if self.real_time:
                     screen_time = self.time
                 else:
@@ -189,9 +198,9 @@ class Game():
             if self.time > self.max_time:
                 self.running = False
 
+    def quit(self):
         pg.display.quit()
         pg.quit()
-        # quit()
 
     def detect_hits(self, dt):
         """For each tank, search for a hit on each other tank. Keep only the
@@ -230,3 +239,4 @@ if __name__ == "__main__":
                 screen_height=screen_height, real_time=False, fps=30, dt=0.01)
 
     game.run()
+    game.quit()
