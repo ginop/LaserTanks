@@ -226,6 +226,11 @@ class Game():
                 else:  # back to default, really-long laser_length
                     shooter.laser_length = Tank.laser_length
 
+    def get_external_forces(self, tank, ode_state):
+        ddx = 0.0
+        ddy = 0.0
+        dw = 0.0
+        return ddx, ddy, dw
 
 if __name__ == "__main__":
 

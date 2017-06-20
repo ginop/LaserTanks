@@ -1,7 +1,7 @@
 import numpy as np
 from math import pi
 from importlib import import_module
-from scipy.integrate import quad
+from scipy.integrate import quad, odeint
 
 
 def rotate(points, angle):
@@ -154,132 +154,98 @@ class Tank():
         elif self.shoot:
             self.time_to_ready = Tank.reload_time + self.laser_dur
 
+    def get_hitbox(self):
+        # Determine hitbox for tank (just use body, not treads, for simplicity)
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
+        hitbox = u * [self.body_length, self.body_width]
+        hitbox = rotate(hitbox, self.orientation[0])
+        hitbox += self.position
+        return hitbox
+
     def move(self, dt):
         # Modeled After Nutaro, Table 2.1
         m = 0.1  # kg
         J = 5e-4  # kg m**2
         B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
         Br = 1.0  # Rolling friction, N s / m
-        Bs = 14.*0  # Sliding friction, N s / m
+        Bs = 0.4  # 14.  # Sliding friction, N s / m
         Bl = 0.7  # Turning friction, N m s / rad
         Sl = 0.3*0  # Lateral friction, N m
         # For turret direction
         Jt = 5e-5  # kg m**2
         Bt = 0.02  # Turning friction, N m s / rad
-        St = 0.01*0  # Sticking threshold, N m
+        St = 0.01  # Sticking threshold, N m
         # Scale normalized inputs to physical values
         tread_force_max = 5.  # N
         Fl = self.drive[0] * tread_force_max
         Fr = self.drive[1] * tread_force_max
         turret_torque_max = 0.1  # N m
         Ft = self.turret_torque * turret_torque_max
-        # Tank only turns if relative tread force can overcome lateral friction
-        # Static friction is relevant only when tank is turning slowly enough
-        if abs((Fr-Fl)*B/2) < Sl and abs(self.spin) < 2.:
-            # Not turning
-            # Solve diff. eq. to get non-linear function for speed, v(t)
-            # dv/dt = (Fl+Fr-Br*v)/m
-            # dt = m*dv/(Fl+Fr-Br*v)
-            # t = -m/Br*log(Fl+Fr-Br*v) + C
-            # Using initial condition v(0) = v0
-            # C = m/Br*log(Fl+Fr-Br*v0)
-            # t = m/Br*log(Fl+Fr-Br*v0) - m/B*log(Fl+Fr-Br*v)
-            # t = -m/Br*log((Fl+Fr-Br*v)/(Fl+Fr-Br*v0))
-            # v = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            v0 = self.speed
-            v1 = (Fr + Fl) / Br  # steady-state speed
-            tauv = m/Br
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            # Integrate to get path length
-            # v = dr/dt = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*exp(-Br*t/m) + C
-            # Using initial condition r(0) = 0
-            # C = -m/Br*(v0-(Fl+Fr)/Br)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*(exp(-Br*t/m)-1)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Rotate path length into coordinate frame
-            a = self.orientation[0]*pi/180
-            self.position[0] += r * np.cos(a)
-            self.position[1] += r * np.sin(a)
-            self.spin = 0.
-            # Calculate each tread rotation
-            # vl = vr = v
-            # dl = dr = r
-            self.tread_offset[0] += r
-            self.tread_offset[1] += r
-        else:
-            # Is turning
-            # dv/dt = (Fl+Fr-(Br+Bs)*v)/m
-            # Substitute (Br+Bs) for Br in non-turning equations
-            # v = (Fl+Fr)/(Br+Bs) -
-            #     (v0-(Fl+Fr)/(Br+Bs))*exp(-(Br+Bs)*t/m)
-            # r = t*(Fl+Fr)/(Br+Bs) +
-            #     m/(Br+Bs)*(v0-(Fl+Fr)/Br)*(exp(-(Br+Bs)*t/m)-1)
-            v0 = self.speed
-            v1 = (Fr + Fl) / (Br + Bs)
-            tauv = m/(Br+Bs)
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Solve diff. eq. to get angular rate, w
-            # dw/dt = ((Fl-Fr)*B/2 - Bl*w)/J
-            # dt = J*dw/(B/2*(Fl-Fr)-Bl*w)
-            # t = -J/Bl*log(B*(Fl-Fr)-2*Bl*w) + C
-            # Using initial condition w(0) = w0
-            # C = J/Bl*log(B*(Fl-Fr)-2*Bl*w0)
-            # t = -J/Bl*log((B*(Fl-Fr)-2*Bl*w)/(B*(Fl-Fr)-2*Bl*w0))
-            # w = B/2*(Fl-Fr)/Bl-(B/2*(Fl-Fr)/Bl-w0)*exp(-Bl*t/J)
-            w1 = B/2*(Fr-Fl)/Bl
-            w0 = self.spin * pi/180
-            tauw = J/Bl
-            self.spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            # Integrate to get change in orientation, a
-            # w = da/dt = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
-            # a = (B/2*(Fl-Fr)*t +
-            #     (B/2*(Fl-Fr)/Bl*J-w0*J)*exp(-Bl*t/J))/Bl
-            theta0 = self.orientation[0] * pi/180
-            dtheta = w1*dt - tauw * (w1 - w0) * (1 - np.exp(-dt/tauw))
-            self.orientation[0] += dtheta * 180/pi
-            # Calculate for x and y displacement
-            # dx/dt = v(t) * cos(a(t)) : differs in convention from Nutaro
-            # A0 = (Fl+Fr)/(Br+Bs)
-            # A1 = B/2*(Fl-Fr)/Bl
-            # dx/dt = (A0 - (v0-A0)*exp(-(Br+Bs)*t/m)) *
-            #         cos(A1*t + (A1/Bl*J-w0*J/Bl)*exp(-Bl*t/J))
-            # dx/dt may not be analytically integrable
-            # but we can solve the problem numerically
-            # dy/dt = v(t) * sin(a(t))
 
-            def dxdt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.cos(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+        def move_ode(states, t):
+            # states                derivatives
+            # ------                -----------
+            # x                     x dot
+            # y                     y dot
+            # x_dot                 x ddot
+            # y_dot                 y ddot
+            # body angle            body angle rate
+            # body angle rate       body angle accel
+            # turret angle          turret angle rate
+            # turret angle rate     turret angle accel
+            x, y, dx, dy, a1, w1, a2, w2 = states
+            v = np.sqrt(dx**2 + dy**2)
+            # Tank may also be influenced by external forces (impact with wall
+            # or opponent). These forces are calculated by the game object.
+            ext_ddx, ext_ddy, ext_dw1 = self.game.get_external_forces(self, states)
+            # Tank only turns if relative tread force can overcome lateral
+            # friction or if is already turning fast enough
+            if abs((Fr-Fl)*B/2) < Sl and abs(w1) < 2.:
+                # Not turning
+                dv = (Fl+Fr-Br*v)/m
+                w1 = 0
+                dw1 = 0
+            else:
+                # Is turning
+                dv = (Fl+Fr-(Br+Bs)*v)/m
+                dw1 = ((Fl-Fr)*B/2 - Bl*w1)/J
+            ddx = dv * np.cos(a1)
+            ddy = dv * np.sin(a1)
+            # Turret can spin if already spinning or if force can break sticking
+            # TODO add forces from turning of body and inertia of turret
+            if abs(Ft) > St or w2 > 2.:
+                # Turret can turn
+                dw2 = (Ft - Bt*w2)/Jt
+            else:
+                w2 = 0
+                dw2 = 0
+            return dx, dy, ddx, ddy, w1, dw1, w2, dw2
 
-            def dydt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.sin(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+        x = self.position[0]
+        y = self.position[1]
+        v = self.speed
+        a1 = self.orientation[0] * pi/180
+        w1 = self.spin * pi/180
+        dx = v * np.cos(a1)
+        dy = v * np.sin(a1)
+        a2 = self.orientation[1] * pi/180
+        w2 = self.turret_spin * pi/180
 
-            x, err = quad(dxdt, 0, dt)
-            y, err = quad(dydt, 0, dt)
-            self.position[0] += x
-            self.position[1] += y
+        x0 = (x, y, dx, dy, a1, w1, a2, w2)
+        x1 = odeint(move_ode, x0, [0, dt])
+        x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
+        v = np.sqrt(dx**2 + dy**2)
 
-            # Calculate each tread rotation
-            self.tread_offset[0] += r - dtheta*B/2
-            self.tread_offset[1] += r + dtheta*B/2
-
-        # Turret can spin if already spinning or if force can break sticking
-        if abs(Ft) > St or self.turret_spin > 2.:
-            # Turret can turn
-            # Following equations for tank body turning
-            # TODO add forces from turning of body
-            w1 = Ft/Bt
-            w0 = self.turret_spin * pi/180
-            tauw = Jt/Bt
-            self.turret_spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            theta0 = self.orientation[1] * pi/180
-            self.orientation[1] += (w1*dt - tauw * (w1 - w0) *
-                                    (1 - np.exp(-dt/tauw))) * 180/pi
+        self.position[0] = x
+        self.position[1] = y
+        self.speed = v
+        self.orientation = [a1 * 180/pi, a2 * 180/pi]
+        self.spin = w1 * 180/pi
+        self.turret_spin = w2 * 180/pi
+        # Calculate each tread rotation (approximately)
+        self.tread_offset += dt * self.speed
+        self.tread_offset[0] -= dt * B*w1/2
+        self.tread_offset[1] += dt * B*w1/2
 
     def info(self):
         return {"position": self.position,
@@ -315,11 +281,7 @@ class Tank():
         Outputs:
             dist: distance from laser origin to impact point, None if no impact
         """
-        # Determine hitbox for tank (just use body, not treads, for simplicity)
-        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
-        hitbox = u * [self.body_length, self.body_width]
-        hitbox = rotate(hitbox, self.orientation[0])
-        hitbox += self.position
+        hitbox = self.get_hitbox()
         # Translate laser to origin
         hitbox -= laser[:2]
         # Rotate laser to x-axis
