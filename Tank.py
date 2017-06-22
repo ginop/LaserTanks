@@ -157,7 +157,8 @@ class Tank():
     def get_hitbox(self):
         # Determine hitbox for tank (just use body, not treads, for simplicity)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
-        hitbox = u * [self.body_length, self.body_width]
+        hitbox = u * [self.tread_length,
+                      self.body_width+2*(self.tread_width-self.tread_overlap)]
         hitbox = rotate(hitbox, self.orientation[0])
         hitbox += self.position
         return hitbox
@@ -195,12 +196,9 @@ class Tank():
             # turret angle rate     turret angle accel
             x, y, dx, dy, a1, w1, a2, w2 = states
             v = np.sqrt(dx**2 + dy**2)
-            # Tank may also be influenced by external forces (impact with wall
-            # or opponent). These forces are calculated by the game object.
-            ext_fx, ext_fy, ext_fw1 = self.game.get_external_forces(self, states)
             # Tank only turns if relative tread force can overcome lateral
             # friction or if is already turning fast enough
-            if abs((Fr-Fl)*B/2) + ext_fw1 < Sl and abs(w1) < 2.:
+            if abs((Fr-Fl)*B/2) < Sl and abs(w1) < 2.:
                 # Not turning
                 dv = (Fl+Fr-Br*v)/m
                 w1 = 0
@@ -208,9 +206,9 @@ class Tank():
             else:
                 # Is turning
                 dv = (Fl+Fr-(Br+Bs)*v)/m
-                dw1 = ((Fl-Fr)*B/2 - Bl*w1)/J + ext_fw1/J
-            ddx = dv * np.cos(a1) + ext_fx/m
-            ddy = dv * np.sin(a1) + ext_fy/m
+                dw1 = ((Fl-Fr)*B/2 - Bl*w1)/J
+            ddx = dv * np.cos(a1)
+            ddy = dv * np.sin(a1)
             # Turret can spin if already spinning or if force can break sticking
             # TODO add forces from turning of body and inertia of turret
             if abs(Ft) > St or w2 > 2.:
@@ -234,6 +232,30 @@ class Tank():
         x0 = (x, y, dx, dy, a1, w1, a2, w2)
         x1 = odeint(move_ode, x0, [0, dt], rtol=1e-3, atol=1e-2)
         x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
+
+        # Enforce walls
+        pts = self.get_hitbox()
+        max_x = max(pts[:, 0])
+        min_x = min(pts[:, 0])
+        max_y = max(pts[:, 1])
+        min_y = min(pts[:, 1])
+        if min_x <= 0:  # left
+            x -= min_x
+            if dx <= 0:
+                dx = 0.0
+        if max_x >= self.game.screen_width:  # right
+            x -= max_x - self.game.screen_width
+            if dx >= 0:
+                dx = 0.0
+        if min_y <= 0:  # bottom
+            y -= min_y
+            if dy <= 0:
+                dy = 0.0
+        if max_y >= self.game.screen_height:  # top
+            y -= max_y - self.game.screen_height
+            if dy >= 0:
+                dy = 0.0
+
         v = np.sqrt(dx**2 + dy**2)
 
         self.position[0] = x
