@@ -197,10 +197,10 @@ class Tank():
             v = np.sqrt(dx**2 + dy**2)
             # Tank may also be influenced by external forces (impact with wall
             # or opponent). These forces are calculated by the game object.
-            ext_ddx, ext_ddy, ext_dw1 = self.game.get_external_forces(self, states)
+            ext_fx, ext_fy, ext_fw1 = self.game.get_external_forces(self, states)
             # Tank only turns if relative tread force can overcome lateral
             # friction or if is already turning fast enough
-            if abs((Fr-Fl)*B/2) < Sl and abs(w1) < 2.:
+            if abs((Fr-Fl)*B/2) + ext_fw1 < Sl and abs(w1) < 2.:
                 # Not turning
                 dv = (Fl+Fr-Br*v)/m
                 w1 = 0
@@ -208,9 +208,9 @@ class Tank():
             else:
                 # Is turning
                 dv = (Fl+Fr-(Br+Bs)*v)/m
-                dw1 = ((Fl-Fr)*B/2 - Bl*w1)/J
-            ddx = dv * np.cos(a1)
-            ddy = dv * np.sin(a1)
+                dw1 = ((Fl-Fr)*B/2 - Bl*w1)/J + ext_fw1/J
+            ddx = dv * np.cos(a1) + ext_fx/m
+            ddy = dv * np.sin(a1) + ext_fy/m
             # Turret can spin if already spinning or if force can break sticking
             # TODO add forces from turning of body and inertia of turret
             if abs(Ft) > St or w2 > 2.:
@@ -232,7 +232,7 @@ class Tank():
         w2 = self.turret_spin * pi/180
 
         x0 = (x, y, dx, dy, a1, w1, a2, w2)
-        x1 = odeint(move_ode, x0, [0, dt])
+        x1 = odeint(move_ode, x0, [0, dt], rtol=1e-3, atol=1e-2)
         x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
         v = np.sqrt(dx**2 + dy**2)
 

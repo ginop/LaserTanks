@@ -227,10 +227,58 @@ class Game():
                     shooter.laser_length = Tank.laser_length
 
     def get_external_forces(self, tank, ode_state):
-        ddx = 0.0
-        ddy = 0.0
-        dw = 0.0
-        return ddx, ddy, dw
+        pts = tank.get_hitbox()
+        net_force = np.zeros(2)
+        net_torque = 0.0
+
+        H = self.screen_height
+        W = self.screen_width
+
+        l, w = tank.body_length, tank.body_width
+        x, y, dx, dy = ode_state[:4]
+
+        b = 0.1  # contact distance
+        c = 100  # bounce accel coeff
+        d = 0.1  # kinetic friction coeff
+        h = 0.2  # restitution "drag" coeff
+
+        for xi, yi in pts:
+            # Bottom (y=0)
+            if yi <= b:
+                normal_force = c*((yi)/b-1)**2
+                friction = -d*np.sign(dx)*normal_force
+                this_force = np.array([friction, normal_force*(1-h*dy)])
+                this_torque = np.cross([xi-x, yi-y], this_force)
+                net_force += this_force
+                net_torque += this_torque
+            # Top (y=H)
+            if (H-yi)<=b:
+                normal_force = c*((H-yi)/b-1)**2
+                friction = -d*np.sign(dx)*normal_force
+                this_force = np.array([friction, -normal_force*(1+h*dy)])
+                this_torque = np.cross([xi-x, yi-y], this_force)
+                net_force += this_force
+                net_torque += this_torque
+            # Left (x=0)
+            if (xi)<=b:
+                normal_force = c*((xi)/b-1)**2
+                friction = -d*np.sign(dy)*normal_force
+                this_force = np.array([normal_force*(1-h*dx), friction])
+                this_torque = np.cross([xi-x, yi-y], this_force)
+                net_force += this_force
+                net_torque += this_torque
+            # Right (x=W)
+            if (W-xi)<=b:
+                normal_force = c*((W-xi)/b-1)**2
+                friction = -d*np.sign(dy)*normal_force
+                this_force = np.array([-normal_force*(1+h*dx), friction])
+                this_torque = np.cross([xi-x, yi-y], this_force)
+                net_force += this_force
+                net_torque += this_torque
+
+        fx, fy = net_force
+        fw = net_torque
+        return fx, fy, fw
 
 if __name__ == "__main__":
 
@@ -241,7 +289,7 @@ if __name__ == "__main__":
     B = Tank('RandomController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
-                screen_height=screen_height, real_time=True, fps=30, dt=0.01)
+                screen_height=screen_height, real_time=False, fps=30, dt=0.01)
 
     game.run()
     game.quit()

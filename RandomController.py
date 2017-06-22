@@ -6,7 +6,9 @@ from LaserTankController import LaserTankController
 class RandomController(LaserTankController):
 
     def __init__(self):
-        self.alpha = 1/20
+        self.alpha = 1/30
+        self.update_t = -np.infty
+        self.cmd = [0.0, 0.0]
         self.drive = np.array([0., 0.])
         self.aim_pid = PID(1.0, 0.01, 0.1)
 
@@ -17,8 +19,11 @@ class RandomController(LaserTankController):
 
         them = them[0]  # only concerned with one target
 
+        if t - self.update_t >= 5.0:
+            self.update_t = t
+            self.cmd = np.random.uniform(-0.2, 1.0, (2))
         self.drive *= 1 - self.alpha
-        self.drive += self.alpha * np.random.uniform(-0.5, 1.0, (2))
+        self.drive += self.alpha * self.cmd
 
         # Use a PID controller to keep the turret focused on the enemy
         vec = them['position'] - me['position']
@@ -28,7 +33,7 @@ class RandomController(LaserTankController):
         d_angle = (d_angle + 180) % 360 - 180  # in +-180
         turret_spin = self.aim_pid.step(d_angle)
 
-        return np.tanh(self.drive), np.tanh(turret_spin), True
+        return np.tanh(self.drive), np.tanh(turret_spin), False
 
 
 class PID():
