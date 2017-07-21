@@ -10,6 +10,7 @@ from time import time as pytime
 
 
 def do_nothing(*args, **kwargs):
+    """A placeholder for function-call hooks in a Game"""
     pass
 
 
@@ -231,12 +232,12 @@ if __name__ == "__main__":
 
     screen_width = 40
     screen_height = 40
-    R = Tank('RandomController', (200, 25, 0),
+    R = Tank('SimpleController', (200, 25, 0),
              [screen_width/8, screen_height/2], [-90, 0])
     B = Tank('RandomController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
-                screen_height=screen_height, real_time=True, fps=30, dt=0.01)
+                screen_height=screen_height, real_time=True, fps=60, dt=0.002)
 
     game.run()
     game.quit()

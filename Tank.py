@@ -1,5 +1,5 @@
 import numpy as np
-from math import pi
+from math import pi, degrees, radians
 from importlib import import_module
 from scipy.integrate import quad
 
@@ -156,130 +156,76 @@ class Tank():
 
     def move(self, dt):
         # Modeled After Nutaro, Table 2.1
-        m = 0.1  # kg
-        J = 5e-4  # kg m**2
+        m = 100  # kg
+        J = (m*4/5)/12*(Tank.body_width**2+Tank.body_length**2)  # kg m**2
         B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
-        Br = 1.0  # Rolling friction, N s / m
-        Bs = 14.*0  # Sliding friction, N s / m
-        Bl = 0.7  # Turning friction, N m s / rad
-        Sl = 0.3*0  # Lateral friction, N m
+
+        tread_force_max = 200.  # N
+        turret_torque_max = 10.  # N m
+
+        top_speed = 10.  # m/s
+        Br = 2*tread_force_max/top_speed  # Rolling friction, N s / m
+        top_spin = pi  # rad/sec
+        Bl = B*tread_force_max/top_spin  # Turning friction, N m s / rad
+        Bl2 = Bl*Tank.tread_length/4  # Lateral friction, N s / m
+        Sl = tread_force_max*B/10  # Sticking friction, N m
         # For turret direction
-        Jt = 5e-5  # kg m**2
-        Bt = 0.02  # Turning friction, N m s / rad
-        St = 0.01*0  # Sticking threshold, N m
+        Jt = (m/5)*Tank.turret_radius**2/2  # kg m**2
+        top_spin = pi/4  # rad/sec
+        Bt = turret_torque_max/top_spin  # Turning friction, N m s / rad
+        St = turret_torque_max/20*0  # Sticking threshold, N m
+
         # Scale normalized inputs to physical values
-        tread_force_max = 5.  # N
         Fl = self.drive[0] * tread_force_max
         Fr = self.drive[1] * tread_force_max
-        turret_torque_max = 0.1  # N m
         Ft = self.turret_torque * turret_torque_max
+
         # Tank only turns if relative tread force can overcome lateral friction
         # Static friction is relevant only when tank is turning slowly enough
-        if abs((Fr-Fl)*B/2) < Sl and abs(self.spin) < 2.:
+        T = (Fr-Fl)*B/2  # torque applied by treads
+        if abs(T) < Sl and abs(self.spin) < 2.:
             # Not turning
-            # Solve diff. eq. to get non-linear function for speed, v(t)
-            # dv/dt = (Fl+Fr-Br*v)/m
-            # dt = m*dv/(Fl+Fr-Br*v)
-            # t = -m/Br*log(Fl+Fr-Br*v) + C
-            # Using initial condition v(0) = v0
-            # C = m/Br*log(Fl+Fr-Br*v0)
-            # t = m/Br*log(Fl+Fr-Br*v0) - m/B*log(Fl+Fr-Br*v)
-            # t = -m/Br*log((Fl+Fr-Br*v)/(Fl+Fr-Br*v0))
-            # v = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            v0 = self.speed
-            v1 = (Fr + Fl) / Br  # steady-state speed
-            tauv = m/Br
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            # Integrate to get path length
-            # v = dr/dt = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*exp(-Br*t/m) + C
-            # Using initial condition r(0) = 0
-            # C = -m/Br*(v0-(Fl+Fr)/Br)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*(exp(-Br*t/m)-1)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Rotate path length into coordinate frame
-            a = self.orientation[0]*pi/180
-            self.position[0] += r * np.cos(a)
-            self.position[1] += r * np.sin(a)
-            self.spin = 0.
-            # Calculate each tread rotation
-            # vl = vr = v
-            # dl = dr = r
-            self.tread_offset[0] += r
-            self.tread_offset[1] += r
-        else:
-            # Is turning
-            # dv/dt = (Fl+Fr-(Br+Bs)*v)/m
-            # Substitute (Br+Bs) for Br in non-turning equations
-            # v = (Fl+Fr)/(Br+Bs) -
-            #     (v0-(Fl+Fr)/(Br+Bs))*exp(-(Br+Bs)*t/m)
-            # r = t*(Fl+Fr)/(Br+Bs) +
-            #     m/(Br+Bs)*(v0-(Fl+Fr)/Br)*(exp(-(Br+Bs)*t/m)-1)
-            v0 = self.speed
-            v1 = (Fr + Fl) / (Br + Bs)
-            tauv = m/(Br+Bs)
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Solve diff. eq. to get angular rate, w
-            # dw/dt = ((Fl-Fr)*B/2 - Bl*w)/J
-            # dt = J*dw/(B/2*(Fl-Fr)-Bl*w)
-            # t = -J/Bl*log(B*(Fl-Fr)-2*Bl*w) + C
-            # Using initial condition w(0) = w0
-            # C = J/Bl*log(B*(Fl-Fr)-2*Bl*w0)
-            # t = -J/Bl*log((B*(Fl-Fr)-2*Bl*w)/(B*(Fl-Fr)-2*Bl*w0))
-            # w = B/2*(Fl-Fr)/Bl-(B/2*(Fl-Fr)/Bl-w0)*exp(-Bl*t/J)
-            w1 = B/2*(Fr-Fl)/Bl
             w0 = self.spin * pi/180
-            tauw = J/Bl
-            self.spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            # Integrate to get change in orientation, a
-            # w = da/dt = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
-            # a = (B/2*(Fl-Fr)*t +
-            #     (B/2*(Fl-Fr)/Bl*J-w0*J)*exp(-Bl*t/J))/Bl
-            theta0 = self.orientation[0] * pi/180
-            dtheta = w1*dt - tauw * (w1 - w0) * (1 - np.exp(-dt/tauw))
-            self.orientation[0] += dtheta * 180/pi
-            # Calculate for x and y displacement
-            # dx/dt = v(t) * cos(a(t)) : differs in convention from Nutaro
-            # A0 = (Fl+Fr)/(Br+Bs)
-            # A1 = B/2*(Fl-Fr)/Bl
-            # dx/dt = (A0 - (v0-A0)*exp(-(Br+Bs)*t/m)) *
-            #         cos(A1*t + (A1/Bl*J-w0*J/Bl)*exp(-Bl*t/J))
-            # dx/dt may not be analytically integrable
-            # but we can solve the problem numerically
-            # dy/dt = v(t) * sin(a(t))
+            w1 = 0
+        else:
+            w0 = self.spin * pi/180
+            dwdt = (T-Bl*w0)/J
+            w1 = w0 + dwdt*dt
+        self.spin = w1 * 180/pi
 
-            def dxdt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.cos(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+        v0 = self.speed
+        dvdt = (Fl+Fr-Br*v0)/m
+        v1 = v0 + dvdt*dt
+        self.speed = v1
 
-            def dydt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.sin(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+        theta0 = self.orientation[0] * pi/180
+        dtheta = (w0+w1)/2*dt
+        self.orientation[0] += dtheta * 180/pi
 
-            x, err = quad(dxdt, 0, dt)
-            y, err = quad(dydt, 0, dt)
-            self.position[0] += x
-            self.position[1] += y
+        # If a collision has caused the tank to slide sideways,
+        # apply drag and redistribute into speed if turning
+        self.slide  = 
 
-            # Calculate each tread rotation
-            self.tread_offset[0] += r - dtheta*B/2
-            self.tread_offset[1] += r + dtheta*B/2
+        r = (v0+v1)/2*dt
+
+        self.position[0] += r * np.cos(theta0+dtheta/2)
+        self.position[1] += r * np.sin(theta0+dtheta/2)
+
+        # Calculate each tread rotation
+        self.tread_offset[0] += r - dtheta*B/2  # left
+        self.tread_offset[1] += r + dtheta*B/2  # right
 
         # Turret can spin if already spinning or if force can break sticking
         if abs(Ft) > St or self.turret_spin > 2.:
             # Turret can turn
             # Following equations for tank body turning
             # TODO add forces from turning of body
-            w1 = Ft/Bt
-            w0 = self.turret_spin * pi/180
-            tauw = Jt/Bt
-            self.turret_spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            theta0 = self.orientation[1] * pi/180
-            self.orientation[1] += (w1*dt - tauw * (w1 - w0) *
-                                    (1 - np.exp(-dt/tauw))) * 180/pi
+            w0 = radians(self.turret_spin)
+            dwdt = (Ft-Bt*w0)/Jt
+            self.turret_spin += degrees(dwdt*dt)
+            self.orientation[1] += degrees(w0*dt + dwdt*dt/2)
+        else:
+            self.turret_spin = 0
 
     def info(self):
         return {"position": self.position,
