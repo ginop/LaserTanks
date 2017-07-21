@@ -3,7 +3,7 @@
 import numpy as np
 import pygame as pg
 # gfxdraw is a submodule (a child directory in the pygame folder) so it must be
-# specifically imported. from pygame import * would not include it.
+# specifically imported. "from pygame import *" would not include it.
 from pygame import gfxdraw
 from Tank import Tank
 from time import time as pytime

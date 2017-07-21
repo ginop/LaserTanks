@@ -1,7 +1,7 @@
 import numpy as np
 from math import pi, degrees, radians
 from importlib import import_module
-from scipy.integrate import quad
+from scipy.integrate import quad, odeint
 
 
 def rotate(points, angle):
@@ -154,6 +154,15 @@ class Tank():
         elif self.shoot:
             self.time_to_ready = Tank.reload_time + self.laser_dur
 
+    def get_hitbox(self):
+        # Determine hitbox for tank (just use body, not treads, for simplicity)
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
+        hitbox = u * [self.tread_length,
+                      self.body_width+2*(self.tread_width-self.tread_overlap)]
+        hitbox = rotate(hitbox, self.orientation[0])
+        hitbox += self.position
+        return hitbox
+
     def move(self, dt):
         # Modeled After Nutaro, Table 2.1
         m = 100  # kg
@@ -204,7 +213,7 @@ class Tank():
 
         # If a collision has caused the tank to slide sideways,
         # apply drag and redistribute into speed if turning
-        self.slide  = 
+        self.slide  =
 
         r = (v0+v1)/2*dt
 
@@ -226,6 +235,45 @@ class Tank():
             self.orientation[1] += degrees(w0*dt + dwdt*dt/2)
         else:
             self.turret_spin = 0
+
+                x = self.position[0]
+                y = self.position[1]
+                v = self.speed
+                a1 = self.orientation[0] * pi/180
+                w1 = self.spin * pi/180
+                dx = v * np.cos(a1)
+                dy = v * np.sin(a1)
+                a2 = self.orientation[1] * pi/180
+                w2 = self.turret_spin * pi/180
+
+                x0 = (x, y, dx, dy, a1, w1, a2, w2)
+                x1 = odeint(move_ode, x0, [0, dt], rtol=1e-3, atol=1e-2)
+                x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
+
+        """
+        # Enforce walls
+        pts = self.get_hitbox()
+        max_x = max(pts[:, 0])
+        min_x = min(pts[:, 0])
+        max_y = max(pts[:, 1])
+        min_y = min(pts[:, 1])
+        if min_x <= 0:  # left
+            x -= min_x
+            if dx <= 0:
+                dx = 0.0
+        if max_x >= self.game.screen_width:  # right
+            x -= max_x - self.game.screen_width
+            if dx >= 0:
+                dx = 0.0
+        if min_y <= 0:  # bottom
+            y -= min_y
+            if dy <= 0:
+                dy = 0.0
+        if max_y >= self.game.screen_height:  # top
+            y -= max_y - self.game.screen_height
+            if dy >= 0:
+                dy = 0.0
+        """
 
     def info(self):
         return {"position": self.position,
@@ -261,11 +309,7 @@ class Tank():
         Outputs:
             dist: distance from laser origin to impact point, None if no impact
         """
-        # Determine hitbox for tank (just use body, not treads, for simplicity)
-        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
-        hitbox = u * [self.body_length, self.body_width]
-        hitbox = rotate(hitbox, self.orientation[0])
-        hitbox += self.position
+        hitbox = self.get_hitbox()
         # Translate laser to origin
         hitbox -= laser[:2]
         # Rotate laser to x-axis
