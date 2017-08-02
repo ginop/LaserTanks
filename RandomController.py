@@ -6,7 +6,7 @@ from LaserTankController import LaserTankController
 class RandomController(LaserTankController):
 
     def __init__(self):
-        self.alpha = 1/50
+        self.alpha = 1/10
         self.drive = np.array([0., 0.])
         self.aim_pid = PID(1.0, 0.01, 0.1)
 

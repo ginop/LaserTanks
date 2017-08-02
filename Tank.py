@@ -1,4 +1,7 @@
 import numpy as np
+import pymunk
+from pymunk.vec2d import Vec2d
+from math import sqrt, cos, sin, pi
 from math import pi, degrees, radians
 from importlib import import_module
 from scipy.integrate import quad, odeint
@@ -26,16 +29,16 @@ def rotate(points, angle):
 class Tank():
 
     # Define universal tank shape as Class (not instance) properties
-    body_width = 2.
-    body_length = 3.
-    tread_width = 0.4
-    tread_length = body_length + 0.2
-    tread_overlap = 0.1
-    turret_radius = 0.6
-    barrel_width = 0.2
-    barrel_length = 1.
+    body_width = 20.
+    body_length = 30.
+    tread_width = 4.
+    tread_length = body_length + 2.
+    tread_overlap = 1.
+    turret_radius = 6.
+    barrel_width = 2.
+    barrel_length = 10.
     laser_width = barrel_width
-    blast_radius = 0.4
+    blast_radius = 4.
 
     laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
@@ -72,6 +75,17 @@ class Tank():
         self.hull = 100.
         self.battery = 100.
         self.color = color
+
+        # Create the pymunk object that will be used for collision detection and resolution
+        mass = 10
+        size = (max(self.body_length, self.tread_length),
+                self.body_width+2*(self.tread_width-self.tread_overlap))
+        moment = pymunk.moment_for_box(mass, size)
+        self.body = pymunk.Body(mass, moment)
+        self.box = pymunk.Poly.create_box(self.body, size, 0.1)  # round the corners a bit
+        self.box.friction = 0.5
+        self.body.position = self.position
+        self.body.angle = self.orientation[0]*pi/180
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed right)
@@ -115,7 +129,7 @@ class Tank():
 
         self.game.polygon(body, (0, 0, 0))
         self.game.polygon(barrel, self.color)
-        self.game.circle(self.position, 0.6, self.color)
+        self.game.circle(self.position, self.turret_radius, self.color)
 
         # print HP on tank turret
         self.game.text("{:.0f}".format(self.hull), self.position,
@@ -163,117 +177,58 @@ class Tank():
         hitbox += self.position
         return hitbox
 
-    def move(self, dt):
-        # Modeled After Nutaro, Table 2.1
-        m = 100  # kg
-        J = (m*4/5)/12*(Tank.body_width**2+Tank.body_length**2)  # kg m**2
-        B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
+    def apply_forces(self):
 
-        tread_force_max = 200.  # N
-        turret_torque_max = 10.  # N m
+        # Calculate tank's net force, torque from treads and friction
+        half_width = 20
 
-        top_speed = 10.  # m/s
-        Br = 2*tread_force_max/top_speed  # Rolling friction, N s / m
-        top_spin = pi  # rad/sec
-        Bl = B*tread_force_max/top_spin  # Turning friction, N m s / rad
-        Bl2 = Bl*Tank.tread_length/4  # Lateral friction, N s / m
-        Sl = tread_force_max*B/10  # Sticking friction, N m
-        # For turret direction
-        Jt = (m/5)*Tank.turret_radius**2/2  # kg m**2
-        top_spin = pi/4  # rad/sec
-        Bt = turret_torque_max/top_spin  # Turning friction, N m s / rad
-        St = turret_torque_max/20*0  # Sticking threshold, N m
+        direction = Vec2d(cos(self.body.angle), sin(self.body.angle))
+        perp = direction.perpendicular()
 
-        # Scale normalized inputs to physical values
-        Fl = self.drive[0] * tread_force_max
-        Fr = self.drive[1] * tread_force_max
-        Ft = self.turret_torque * turret_torque_max
+        tread_force_max = 200
+        Fl = self.drive[0] * tread_force_max * direction
+        Fr = self.drive[1] * tread_force_max * direction
 
-        # Tank only turns if relative tread force can overcome lateral friction
-        # Static friction is relevant only when tank is turning slowly enough
-        T = (Fr-Fl)*B/2  # torque applied by treads
-        if abs(T) < Sl and abs(self.spin) < 2.:
-            # Not turning
-            w0 = self.spin * pi/180
-            w1 = 0
-        else:
-            w0 = self.spin * pi/180
-            dwdt = (T-Bl*w0)/J
-            w1 = w0 + dwdt*dt
-        self.spin = w1 * 180/pi
+        # Calculate commanded forces
+        F = Fr + Fl
+        F = Vec2d(F[0], F[1])
+        T = Vec2d(0,-half_width)
+        T.rotate(self.body.angle)
+        T = T.cross(Fr-Fl)
 
-        v0 = self.speed
-        dvdt = (Fl+Fr-Br*v0)/m
-        v1 = v0 + dvdt*dt
-        self.speed = v1
+        # Determine if tank is able to turn
+        forward_speed = direction.dot(self.body.velocity)
+        slip_speed = perp.dot(self.body.velocity)
+        if abs(slip_speed) < 2 and abs(T) < 500:
+            slip_speed = 0
+            T = 0
+            self.body.angular_velocity = 0
+            self.body.velocity = forward_speed * direction
 
-        theta0 = self.orientation[0] * pi/180
-        dtheta = (w0+w1)/2*dt
-        self.orientation[0] += dtheta * 180/pi
+        # Apply friction forces
+        F -= 2*forward_speed*direction + 100*slip_speed*perp
+        T -= 10000*self.body.angular_velocity
 
-        # If a collision has caused the tank to slide sideways,
-        # apply drag and redistribute into speed if turning
-        self.slide  =
+        # Synthesize the net force and torque with F1 at CoM and F2 on edge
+        F.rotate(-self.body.angle)  # from world to tank frame
+        F2 = Vec2d(T/half_width, 0)  # in tank frame
+        F1 = F - F2  # in tank frame
+        self.body.apply_force_at_local_point(F1, (0, 0))
+        self.body.apply_force_at_local_point(F2, (0, -half_width))
 
-        r = (v0+v1)/2*dt
+        #print(self.color)
+        #import ipdb
+        #ipdb.set_trace()
 
-        self.position[0] += r * np.cos(theta0+dtheta/2)
-        self.position[1] += r * np.sin(theta0+dtheta/2)
+    def move(self):
+        dtheta = self.body.angle - self.orientation[0]*pi/180
+        dpos = self.body.position - self.position
 
-        # Calculate each tread rotation
-        self.tread_offset[0] += r - dtheta*B/2  # left
-        self.tread_offset[1] += r + dtheta*B/2  # right
+        self.position = self.body.position
+        self.orientation[0] = self.body.angle*180/pi
 
-        # Turret can spin if already spinning or if force can break sticking
-        if abs(Ft) > St or self.turret_spin > 2.:
-            # Turret can turn
-            # Following equations for tank body turning
-            # TODO add forces from turning of body
-            w0 = radians(self.turret_spin)
-            dwdt = (Ft-Bt*w0)/Jt
-            self.turret_spin += degrees(dwdt*dt)
-            self.orientation[1] += degrees(w0*dt + dwdt*dt/2)
-        else:
-            self.turret_spin = 0
-
-                x = self.position[0]
-                y = self.position[1]
-                v = self.speed
-                a1 = self.orientation[0] * pi/180
-                w1 = self.spin * pi/180
-                dx = v * np.cos(a1)
-                dy = v * np.sin(a1)
-                a2 = self.orientation[1] * pi/180
-                w2 = self.turret_spin * pi/180
-
-                x0 = (x, y, dx, dy, a1, w1, a2, w2)
-                x1 = odeint(move_ode, x0, [0, dt], rtol=1e-3, atol=1e-2)
-                x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
-
-        """
-        # Enforce walls
-        pts = self.get_hitbox()
-        max_x = max(pts[:, 0])
-        min_x = min(pts[:, 0])
-        max_y = max(pts[:, 1])
-        min_y = min(pts[:, 1])
-        if min_x <= 0:  # left
-            x -= min_x
-            if dx <= 0:
-                dx = 0.0
-        if max_x >= self.game.screen_width:  # right
-            x -= max_x - self.game.screen_width
-            if dx >= 0:
-                dx = 0.0
-        if min_y <= 0:  # bottom
-            y -= min_y
-            if dy <= 0:
-                dy = 0.0
-        if max_y >= self.game.screen_height:  # top
-            y -= max_y - self.game.screen_height
-            if dy >= 0:
-                dy = 0.0
-        """
+        self.tread_offset += dpos.get_length()
+        self.tread_offset += dtheta * self.body_width/2 * Vec2d(-1,1)
 
     def info(self):
         return {"position": self.position,
