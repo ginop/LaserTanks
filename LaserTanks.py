@@ -17,6 +17,32 @@ def do_nothing(*args, **kwargs):
 
 
 class Game():
+    """ The Laser Tanks Game object
+    Manage game components, simulation, and visualization.
+
+    Properties:
+      tanks: a list of Tank objects that will compete in the game
+      px: ratio of pixels to in-game length units
+      screen_width: arena width in in-game length units
+      screen_height: arena height in in-game length units
+      real_time: When true, simulation is limited to run in real time. If it is
+                 already slower than real time, visualization speed is slowed
+                 to match. When false, visualization is tied to wall time
+                 rather than simulation time and updates at requested fps
+                 regardless of simulation speed. This allows fast simulations
+                 to run at full speed, and produces smoother visualization of
+                 slow simulations.
+      fps: the requested update rate (frames per second) of the pygame
+           visualization
+      dt: the step size of the pymunk simulation
+      pre_step, post_step: hooks for callback functions run just before and
+                           after each step of the simulation
+      draw: visualization flag. Set to false to run simulation without visuals
+      max_time: simulation time at which simulation ends if not already done
+      end_on_win: flag that determines whether or not game exits when only one
+                  tank is left
+
+    """
 
     def __init__(self, tanks=[], px=2, screen_width=400, screen_height=400,
                  real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
@@ -28,9 +54,13 @@ class Game():
          self.real_time = real_time
          self.fps = fps
          self.dt = dt
-         self.time = 0
+         self.pre_step = pre_step
+         self.post_step = post_step
+         self.draw = draw
          self.max_time = max_time
+         self.end_on_win = end_on_win
 
+         # Set up pymunk space and add tank parts
          self.space = pymunk.Space()
          self.tanks = tanks
          for tank in tanks:
@@ -74,20 +104,20 @@ class Game():
          line.friction = fric
          self.space.add(wall, line)
 
-         self.pre_step = pre_step
-         self.post_step = post_step
-
-         self.end_on_win = end_on_win
+         # Initialize game state params
+         self.time = 0
          self.winner = None
-
-         self.draw = draw
          self.running = False
          self.screen = []
          if self.draw:
+             # Use DOUBLEBUF to speed up pygame drawing
              self.screen = pg.display.set_mode((self.screen_width*self.px,
-                                                self.screen_height*self.px))
+                                                self.screen_height*self.px),
+                                                pg.DOUBLEBUF)
+             self.screen.set_alpha(None)  # For optimization purposes
              pg.display.set_caption("Laser Tanks!")  # The window title
              pg.init()  # must be called before pg.font.SysFont()
+             self.font = pg.font.SysFont("monospace", 12)
 
     def text(self, str, pos, color, centered=False):
         """
@@ -101,15 +131,15 @@ class Game():
         pos = np.array(pos)
         pos[1] = self.screen_height - pos[1]
         pos *= self.px
-        font = pg.font.SysFont("monospace", 12)
-        label = font.render(str, 1, color)
+
+        label = self.font.render(str, 1, color)
         if centered:
             # TODO: Better text centering
             # Using the Rect doesn't seem to make the text exactly centered
             # It is close, but can we do better?
             r = label.get_rect()
             pos -= [r.width/2., r.height/2.]
-        pos = pos.round().astype(int)
+        pos = pos.astype(int)  # cast as int rather than round for speed
         self.screen.blit(label, pos)
 
     def line(self, points, color):
@@ -141,10 +171,10 @@ class Game():
         points[:, 1] = self.screen_height - points[:, 1]
         if color is not None:
             gfxdraw.filled_polygon(self.screen,
-                                   (self.px*points).round().astype(int), color)
+                                   (self.px*points).astype(int), color)
         if edge_color is not None:
             gfxdraw.aapolygon(self.screen,
-                              (self.px*points).round().astype(int), edge_color)
+                              (self.px*points).astype(int), edge_color)
 
     def circle(self, center, radius, color, edge_color=0):
         """
@@ -161,15 +191,13 @@ class Game():
         if edge_color is 0:
             edge_color = color
         if color is not None:
-            gfxdraw.filled_circle(self.screen, int(round(self.px*center[0])),
-                                  int(round(self.px *
-                                            (self.screen_height-center[1]))),
-                                  int(round(self.px*radius)), color)
+            gfxdraw.filled_circle(self.screen, int(self.px*center[0]),
+                                  int(self.px * (self.screen_height-center[1])),
+                                  int(self.px*radius), color)
         if edge_color is not None:
-            gfxdraw.aacircle(self.screen, int(round(self.px*center[0])),
-                             int(round(self.px *
-                                       (self.screen_height-center[1]))),
-                             int(round(self.px*radius)), edge_color)
+            gfxdraw.aacircle(self.screen, int(self.px*center[0]),
+                             int(self.px * (self.screen_height-center[1])),
+                             int(self.px*radius), edge_color)
 
     def run(self):
         clock = pg.time.Clock()
@@ -191,11 +219,12 @@ class Game():
             if self.draw:
                 # set the scene
                 self.screen.fill((50, 50, 50))
-                for x in range(0, self.screen_width, 10):
+                # Drawing these circles is really slow!
+                """for x in range(0, self.screen_width, 10):
                     for y in range(0, self.screen_height, 10):
                         pg.draw.circle(self.screen, (75, 75, 75),
-                                       (round(self.px*(x+1/2)),
-                                        round(self.px*(y+1/2))), round(self.px/10))
+                                       (int(self.px*(x+1/2)),
+                                        int(self.px*(y+1/2))), int(self.px/10))"""
 
             self.time += self.dt
 
@@ -282,7 +311,7 @@ if __name__ == "__main__":
     B = Tank('SimpleController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [135, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
-                screen_height=screen_height, real_time=False, fps=60, dt=1/240)
+                screen_height=screen_height, real_time=True, fps=60, dt=1/240)
 
     game.run()
     game.quit()
