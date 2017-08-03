@@ -1,7 +1,10 @@
 import numpy as np
-from math import pi
+import pymunk
+from pymunk.vec2d import Vec2d
+from math import sqrt, cos, sin, pi
+from math import pi, degrees, radians
 from importlib import import_module
-from scipy.integrate import quad
+from scipy.integrate import quad, odeint
 
 
 def rotate(points, angle):
@@ -26,16 +29,16 @@ def rotate(points, angle):
 class Tank():
 
     # Define universal tank shape as Class (not instance) properties
-    body_width = 2.
-    body_length = 3.
-    tread_width = 0.4
-    tread_length = body_length + 0.2
-    tread_overlap = 0.1
-    turret_radius = 0.6
-    barrel_width = 0.2
-    barrel_length = 1.
+    body_width = 20.
+    body_length = 30.
+    tread_width = 4.
+    tread_length = body_length + 2.
+    tread_overlap = 1.
+    turret_radius = 6.
+    barrel_width = 2.
+    barrel_length = 10.
     laser_width = barrel_width
-    blast_radius = 0.4
+    blast_radius = 4.
 
     laser_length = 999.  # default laser_length, overwritten per instance
     laser_dur = 0.5  # duration of laser shot in seconds
@@ -72,6 +75,36 @@ class Tank():
         self.hull = 100.
         self.battery = 100.
         self.color = color
+
+        # Create the pymunk object that will be used for collision detection and resolution
+        mass = 100
+        size = (max(self.body_length, self.tread_length),
+                self.body_width+2*(self.tread_width-self.tread_overlap))
+        moment = pymunk.moment_for_box(mass, size)
+        self.body = pymunk.Body(mass, moment)
+        self.box = pymunk.Poly.create_box(self.body, size, 0.1)  # round the corners a bit
+        self.box.friction = 0.5
+        self.body.position = self.position
+        self.body.angle = self.orientation[0]*pi/180
+        # And add turret pymunk object with pivot joint with friction
+        turret_mass = 20
+        barrel_mass = 4
+        mass = turret_mass + barrel_mass
+        moment = turret_mass/2*self.turret_radius**2 + \
+                 barrel_mass/3*self.barrel_length**2
+        self.turret_body = pymunk.Body(mass, moment)
+        self.turret_body.position = self.position
+        self.turret_body.angle = (self.orientation[0] +
+                                  self.orientation[1])*pi/180
+        self.turret_circle = pymunk.Circle(self.turret_body,
+                                           self.turret_radius)
+        self.pivot = pymunk.constraint.PivotJoint(self.body,
+                                                  self.turret_body,
+                                                  (0, 0), (0, 0))
+        self.pivot.collide_bodies = False
+        # Create friction between the two with a damped spring with no spring constant
+        self.pivot_friction = pymunk.constraint.DampedRotarySpring(self.body, self.turret_body, 0, 0, 5e3)
+
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed right)
@@ -115,7 +148,7 @@ class Tank():
 
         self.game.polygon(body, (0, 0, 0))
         self.game.polygon(barrel, self.color)
-        self.game.circle(self.position, 0.6, self.color)
+        self.game.circle(self.position, self.turret_radius, self.color)
 
         # print HP on tank turret
         self.game.text("{:.0f}".format(self.hull), self.position,
@@ -154,141 +187,80 @@ class Tank():
         elif self.shoot:
             self.time_to_ready = Tank.reload_time + self.laser_dur
 
-    def move(self, dt):
-        # Modeled After Nutaro, Table 2.1
-        m = 0.1  # kg
-        J = 5e-4  # kg m**2
-        B = Tank.body_width + Tank.tread_width - 2*Tank.tread_overlap
-        Br = 1.0  # Rolling friction, N s / m
-        Bs = 14.*0  # Sliding friction, N s / m
-        Bl = 0.7  # Turning friction, N m s / rad
-        Sl = 0.3*0  # Lateral friction, N m
-        # For turret direction
-        Jt = 5e-5  # kg m**2
-        Bt = 0.02  # Turning friction, N m s / rad
-        St = 0.01*0  # Sticking threshold, N m
-        # Scale normalized inputs to physical values
-        tread_force_max = 5.  # N
-        Fl = self.drive[0] * tread_force_max
-        Fr = self.drive[1] * tread_force_max
-        turret_torque_max = 0.1  # N m
-        Ft = self.turret_torque * turret_torque_max
-        # Tank only turns if relative tread force can overcome lateral friction
-        # Static friction is relevant only when tank is turning slowly enough
-        if abs((Fr-Fl)*B/2) < Sl and abs(self.spin) < 2.:
-            # Not turning
-            # Solve diff. eq. to get non-linear function for speed, v(t)
-            # dv/dt = (Fl+Fr-Br*v)/m
-            # dt = m*dv/(Fl+Fr-Br*v)
-            # t = -m/Br*log(Fl+Fr-Br*v) + C
-            # Using initial condition v(0) = v0
-            # C = m/Br*log(Fl+Fr-Br*v0)
-            # t = m/Br*log(Fl+Fr-Br*v0) - m/B*log(Fl+Fr-Br*v)
-            # t = -m/Br*log((Fl+Fr-Br*v)/(Fl+Fr-Br*v0))
-            # v = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            v0 = self.speed
-            v1 = (Fr + Fl) / Br  # steady-state speed
-            tauv = m/Br
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            # Integrate to get path length
-            # v = dr/dt = (Fl+Fr)/Br - (v0-(Fl+Fr)/Br)*exp(-Br*t/m)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*exp(-Br*t/m) + C
-            # Using initial condition r(0) = 0
-            # C = -m/Br*(v0-(Fl+Fr)/Br)
-            # r = t*(Fl+Fr)/Br + m/Br*(v0-(Fl+Fr)/Br)*(exp(-Br*t/m)-1)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Rotate path length into coordinate frame
-            a = self.orientation[0]*pi/180
-            self.position[0] += r * np.cos(a)
-            self.position[1] += r * np.sin(a)
-            self.spin = 0.
-            # Calculate each tread rotation
-            # vl = vr = v
-            # dl = dr = r
-            self.tread_offset[0] += r
-            self.tread_offset[1] += r
-        else:
-            # Is turning
-            # dv/dt = (Fl+Fr-(Br+Bs)*v)/m
-            # Substitute (Br+Bs) for Br in non-turning equations
-            # v = (Fl+Fr)/(Br+Bs) -
-            #     (v0-(Fl+Fr)/(Br+Bs))*exp(-(Br+Bs)*t/m)
-            # r = t*(Fl+Fr)/(Br+Bs) +
-            #     m/(Br+Bs)*(v0-(Fl+Fr)/Br)*(exp(-(Br+Bs)*t/m)-1)
-            v0 = self.speed
-            v1 = (Fr + Fl) / (Br + Bs)
-            tauv = m/(Br+Bs)
-            self.speed = v1 - (v1 - v0) * np.exp(-dt/tauv)
-            r = v1*dt - tauv * (v1 - v0) * (1 - np.exp(-dt/tauv))
-            # Solve diff. eq. to get angular rate, w
-            # dw/dt = ((Fl-Fr)*B/2 - Bl*w)/J
-            # dt = J*dw/(B/2*(Fl-Fr)-Bl*w)
-            # t = -J/Bl*log(B*(Fl-Fr)-2*Bl*w) + C
-            # Using initial condition w(0) = w0
-            # C = J/Bl*log(B*(Fl-Fr)-2*Bl*w0)
-            # t = -J/Bl*log((B*(Fl-Fr)-2*Bl*w)/(B*(Fl-Fr)-2*Bl*w0))
-            # w = B/2*(Fl-Fr)/Bl-(B/2*(Fl-Fr)/Bl-w0)*exp(-Bl*t/J)
-            w1 = B/2*(Fr-Fl)/Bl
-            w0 = self.spin * pi/180
-            tauw = J/Bl
-            self.spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            # Integrate to get change in orientation, a
-            # w = da/dt = (B/2*(Fl-Fr)-(B/2*(Fl-Fr)-Bl*w0)*exp(-Bl*t/J))/Bl
-            # a = (B/2*(Fl-Fr)*t +
-            #     (B/2*(Fl-Fr)/Bl*J-w0*J)*exp(-Bl*t/J))/Bl
-            theta0 = self.orientation[0] * pi/180
-            dtheta = w1*dt - tauw * (w1 - w0) * (1 - np.exp(-dt/tauw))
-            self.orientation[0] += dtheta * 180/pi
-            # Calculate for x and y displacement
-            # dx/dt = v(t) * cos(a(t)) : differs in convention from Nutaro
-            # A0 = (Fl+Fr)/(Br+Bs)
-            # A1 = B/2*(Fl-Fr)/Bl
-            # dx/dt = (A0 - (v0-A0)*exp(-(Br+Bs)*t/m)) *
-            #         cos(A1*t + (A1/Bl*J-w0*J/Bl)*exp(-Bl*t/J))
-            # dx/dt may not be analytically integrable
-            # but we can solve the problem numerically
-            # dy/dt = v(t) * sin(a(t))
+    def get_hitbox(self):
+        # Determine hitbox for tank (just use body, not treads, for simplicity)
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
+        hitbox = u * [self.tread_length,
+                      self.body_width+2*(self.tread_width-self.tread_overlap)]
+        hitbox = rotate(hitbox, self.orientation[0])
+        hitbox += self.position
+        return hitbox
 
-            def dxdt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.cos(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+    def apply_forces(self):
 
-            def dydt(t):
-                return ((v1 - (v1-v0)*np.exp(-t/tauv)) *
-                        np.sin(theta0 + w1*t -
-                               tauw*(w1-w0)*(1-np.exp(-t/tauw))))
+        # Calculate tank's net force, torque from treads and friction
+        half_width = self.body_width/2+self.tread_width-self.tread_overlap
 
-            x, err = quad(dxdt, 0, dt)
-            y, err = quad(dydt, 0, dt)
-            self.position[0] += x
-            self.position[1] += y
+        direction = Vec2d(cos(self.body.angle), sin(self.body.angle))
+        perp = direction.perpendicular()
 
-            # Calculate each tread rotation
-            self.tread_offset[0] += r - dtheta*B/2
-            self.tread_offset[1] += r + dtheta*B/2
+        tread_force_max = 8000
+        Fl = self.drive[0] * tread_force_max * direction
+        Fr = self.drive[1] * tread_force_max * direction
 
-        # Turret can spin if already spinning or if force can break sticking
-        if abs(Ft) > St or self.turret_spin > 2.:
-            # Turret can turn
-            # Following equations for tank body turning
-            # TODO add forces from turning of body
-            w1 = Ft/Bt
-            w0 = self.turret_spin * pi/180
-            tauw = Jt/Bt
-            self.turret_spin = (w1 - (w1 - w0) * np.exp(-dt/tauw)) * 180/pi
-            theta0 = self.orientation[1] * pi/180
-            self.orientation[1] += (w1*dt - tauw * (w1 - w0) *
-                                    (1 - np.exp(-dt/tauw))) * 180/pi
+        # Calculate commanded forces
+        F = Fr + Fl
+        F = Vec2d(F[0], F[1])
+        T = Vec2d(0,-half_width)
+        T.rotate(self.body.angle)
+        T = T.cross(Fr-Fl)
+
+        # Determine if tank is able to turn
+        forward_speed = direction.dot(self.body.velocity)
+        slip_speed = perp.dot(self.body.velocity)
+        if abs(slip_speed) < 2 and abs(T) < 500:
+            slip_speed = 0
+            T = 0
+            self.body.angular_velocity = 0
+            self.body.velocity = forward_speed * direction
+
+        # Apply friction forces
+        F -= 200*forward_speed*direction + 1000*slip_speed*perp
+        T -= 100000*self.body.angular_velocity
+
+        # Synthesize the net force and torque with F1 at CoM and F2 on edge
+        F.rotate(-self.body.angle)  # from world to tank frame
+        F2 = Vec2d(T/half_width, 0)  # in tank frame
+        F1 = F - F2  # in tank frame
+        self.body.apply_force_at_local_point(F1, (0, 0))
+        self.body.apply_force_at_local_point(F2, (0, -half_width))
+
+        # Apply turret torque by applying mirrored forces on
+        # opposite sides of its axis of rotation
+        f = 1e4 * self.turret_torque / 2
+        self.turret_body.apply_force_at_local_point((0, f), ( 1, 0))
+        self.turret_body.apply_force_at_local_point((0,-f), (-1, 0))
+
+    def move(self):
+        dtheta = self.body.angle - self.orientation[0]*pi/180
+        dpos = self.body.position - self.position
+
+        self.position = self.body.position
+        self.orientation[0] = self.body.angle*180/pi
+        self.orientation[1] = (self.turret_body.angle -
+                               self.body.angle)*180/pi
+
+        self.tread_offset += dpos.get_length()
+        self.tread_offset += dtheta * self.body_width/2 * Vec2d(-1,1)
 
     def info(self):
         return {"position": self.position,
                 "orientation": self.orientation,
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color,
-                "spin": self.spin,
-                "speed": self.speed,
-                "turret_spin": self.turret_spin,
+                "spin": self.body.angular_velocity*180/pi,
+                "speed": self.body.velocity.get_length(),
+                "turret_spin": self.turret_body.angular_velocity*180/pi,
                 "hull": self.hull,
                 "battery": self.battery}
 
@@ -315,11 +287,7 @@ class Tank():
         Outputs:
             dist: distance from laser origin to impact point, None if no impact
         """
-        # Determine hitbox for tank (just use body, not treads, for simplicity)
-        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
-        hitbox = u * [self.body_length, self.body_width]
-        hitbox = rotate(hitbox, self.orientation[0])
-        hitbox += self.position
+        hitbox = self.get_hitbox()
         # Translate laser to origin
         hitbox -= laser[:2]
         # Rotate laser to x-axis

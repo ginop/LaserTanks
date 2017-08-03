@@ -1,51 +1,93 @@
 #!python3
-
 import numpy as np
+import pymunk
+from pymunk.vec2d import Vec2d
+from math import sqrt, cos, sin, pi
 import pygame as pg
 # gfxdraw is a submodule (a child directory in the pygame folder) so it must be
-# specifically imported. from pygame import * would not include it.
+# specifically imported. "from pygame import *" would not include it.
 from pygame import gfxdraw
 from Tank import Tank
 from time import time as pytime
 
 
 def do_nothing(*args, **kwargs):
+    """A placeholder for function-call hooks in a Game"""
     pass
 
 
 class Game():
 
-    def __init__(self, tanks=[], px=20, screen_width=40, screen_height=40,
+    def __init__(self, tanks=[], px=2, screen_width=400, screen_height=400,
                  real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
                  post_step=do_nothing, draw=True, max_time=np.inf,
                  end_on_win=True):
-        for tank in tanks:
-            tank.game = self
-        self.tanks = tanks
+         self.px = px  # pixels per game unit
+         self.screen_width = screen_width  # in game units
+         self.screen_height = screen_height  # in game units
+         self.real_time = real_time
+         self.fps = fps
+         self.dt = dt
+         self.time = 0
+         self.max_time = max_time
 
-        self.px = px  # pixels per game unit
-        self.screen_width = screen_width  # in game unites
-        self.screen_height = screen_height  # in game units
-        self.real_time = real_time
-        self.fps = fps
-        self.dt = dt
-        self.time = 0
-        self.max_time = max_time
+         self.space = pymunk.Space()
+         self.tanks = tanks
+         for tank in tanks:
+             tank.game = self
+             self.space.add(tank.body, tank.box, tank.turret_body, tank.turret_circle, tank.pivot, tank.pivot_friction)
 
-        self.pre_step = pre_step
-        self.post_step = post_step
+         # add walls
+         # TODO: put this in a loop or function to reduce duplicate code
+         fric = 0.6
+         wall_width = 10  # wider (thicker) walls reduce chances of escape
 
-        self.end_on_win = end_on_win
-        self.winner = None
+         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+         line = pymunk.Segment(wall,
+                               (-wall_width, 0),
+                               (-wall_width, self.screen_height),
+                               wall_width)
+         line.friction = fric
+         self.space.add(wall, line)
 
-        self.draw = draw
-        self.running = False
-        self.screen = []
-        if self.draw:
-            self.screen = pg.display.set_mode((self.screen_width*self.px,
-                                               self.screen_height*self.px))
-            pg.display.set_caption("Laser Tanks!")  # The window title
-            pg.init()  # must be called before pg.font.SysFont()
+         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+         line = pymunk.Segment(wall,
+                               (0, -wall_width),
+                               (self.screen_height, -wall_width),
+                               wall_width)
+         line.friction = fric
+         self.space.add(wall, line)
+
+         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+         line = pymunk.Segment(wall,
+                               (0, self.screen_height+wall_width),
+                               (self.screen_height, self.screen_height+wall_width),
+                               wall_width)
+         line.friction = fric
+         self.space.add(wall, line)
+
+         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+         line = pymunk.Segment(wall,
+                               (self.screen_height+wall_width, 0),
+                               (self.screen_height+wall_width, self.screen_height),
+                               wall_width)
+         line.friction = fric
+         self.space.add(wall, line)
+
+         self.pre_step = pre_step
+         self.post_step = post_step
+
+         self.end_on_win = end_on_win
+         self.winner = None
+
+         self.draw = draw
+         self.running = False
+         self.screen = []
+         if self.draw:
+             self.screen = pg.display.set_mode((self.screen_width*self.px,
+                                                self.screen_height*self.px))
+             pg.display.set_caption("Laser Tanks!")  # The window title
+             pg.init()  # must be called before pg.font.SysFont()
 
     def text(self, str, pos, color, centered=False):
         """
@@ -140,63 +182,67 @@ class Game():
         while self.running:
 
             if self.draw:
+                # End loop when window is closed
+                for event in pg.event.get():
+                    # print(event)
+                    if event.type == pg.QUIT:
+                        self.running = False
+
+            if self.draw:
                 # set the scene
                 self.screen.fill((50, 50, 50))
-                for x in range(self.screen_width):
-                    for y in range(self.screen_height):
+                for x in range(0, self.screen_width, 10):
+                    for y in range(0, self.screen_height, 10):
                         pg.draw.circle(self.screen, (75, 75, 75),
                                        (round(self.px*(x+1/2)),
                                         round(self.px*(y+1/2))), round(self.px/10))
 
-            next_time += 1/self.fps
-            # Run the simulation until we are ready to update the graphics
-            while screen_time < next_time:
-                self.time += self.dt
+            self.time += self.dt
 
-                if self.draw:
-                    # End loop when window is closed
-                    for event in pg.event.get():
-                        # print(event)
-                        if event.type == pg.QUIT:
-                            self.running = False
+            # Call hook for pre-step functions
+            self.pre_step()
 
-                # Call hook for pre-step functions
-                self.pre_step()
+            public_info = [[them.public() for them in self.tanks
+                            if them is not me] for me in self.tanks]
+            [T.update(self.dt, self.time, P) for T, P in zip(self.tanks, public_info)]
+            [T.apply_forces() for T in self.tanks]
+            self.space.step(self.dt)  # pymunk magic
+            [T.move() for T in self.tanks]
+            self.detect_hits(self.dt)
 
-                public_info = [[them.public() for them in self.tanks
-                                if them is not me] for me in self.tanks]
-                [T.update(self.dt, self.time, P) for T, P in zip(self.tanks, public_info)]
-                [T.move(self.dt) for T in self.tanks]
-                self.detect_hits(self.dt)
+            # Call hook for post-step functions
+            self.post_step()
 
-                # Call hook for post-step functions
-                self.post_step()
+            if len(self.tanks) == 1:
+                self.winner = self.tanks[0]
+                if self.end_on_win:
+                    self.running = False
 
-                if len(self.tanks) == 1:
-                    self.winner = self.tanks[0]
-                    if self.end_on_win:
-                        self.running = False
-
-                if self.real_time:
-                    screen_time = self.time
-                else:
-                    screen_time = pytime()-start
-
-            if self.draw:
-                [T.draw() for T in self.tanks]
-                [T.draw_laser() for T in self.tanks]
-                self.text("Time: {:.2f} ({:.2f}x real time)".format(self.time,
-                          self.time/(pytime()-start)),
-                          (1/4, self.screen_height-1/4), (255, 255, 255))
-
+            # decide whether or not to draw
             if self.real_time:
-                clock.tick(self.fps)
-
-            if self.draw:
-                pg.display.flip()
+                screen_time = self.time
+            else:
+                screen_time = pytime()-start
 
             if self.time > self.max_time:
                 self.running = False
+
+            # Run the simulation until we are ready to update the graphics
+            if screen_time >= next_time:
+                next_time += 1/self.fps
+                if self.draw:
+                    [T.draw() for T in self.tanks]
+                    [T.draw_laser() for T in self.tanks]
+                    self.text("Time: {:.2f} ({:.2f}x real time) {:.0f} fps".format(self.time,
+                              self.time/(pytime()-start), clock.get_fps()),
+                              (1/4, self.screen_height-1/4), (255, 255, 255))
+                    pg.display.flip()
+
+                if self.real_time:
+                    clock.tick(self.fps)
+                else:
+                    clock.tick()
+
 
     def quit(self):
         pg.display.quit()
@@ -229,14 +275,14 @@ class Game():
 
 if __name__ == "__main__":
 
-    screen_width = 40
-    screen_height = 40
-    R = Tank('RandomController', (200, 25, 0),
+    screen_width = 400
+    screen_height = 400
+    R = Tank('Waypoint_PID_Controller', (200, 25, 0),
              [screen_width/8, screen_height/2], [-90, 0])
-    B = Tank('RandomController', (0, 50, 255),
-             [screen_width*3/4, screen_height/2], [90, 0])
+    B = Tank('SimpleController', (0, 50, 255),
+             [screen_width*3/4, screen_height/2], [135, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
-                screen_height=screen_height, real_time=True, fps=30, dt=0.01)
+                screen_height=screen_height, real_time=False, fps=60, dt=1/240)
 
     game.run()
     game.quit()

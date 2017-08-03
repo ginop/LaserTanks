@@ -13,4 +13,4 @@ class SimpleController(LaserTankController):
             spin = 0.25
         else:
             spin = -0.50
-        return(np.array([0.36, 0.4]), spin, True)
+        return(np.array([0.2, 0.8]), spin, True)

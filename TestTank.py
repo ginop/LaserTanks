@@ -21,6 +21,8 @@ class SimplisticTest(unittest.TestCase):
         # Override the tank shape to make testing easier
         T.body_length = 2.
         T.body_width = 2.
+        T.tread_overlap = T.tread_width
+        T.tread_length = T.body_length
         # Laser defined as tuple of origin x and y and angle
         # A hit returns the distance to the impact, a miss returns None
 

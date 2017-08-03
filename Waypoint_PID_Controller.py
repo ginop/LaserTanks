@@ -27,8 +27,8 @@ class Waypoint_PID_Controller(LaserTankController):
     def __init__(self):
         self.waypoint_gen = waypoint()
         self.destination = next(self.waypoint_gen)
-        self.drive_pid = PID(0.1, 0.001, 0.01)
-        self.aim_pid = PID(1.0, 0.01, 0.1)
+        self.drive_pid = PID(1.0, 0.0, 0.8)
+        self.aim_pid = PID(0.2, 0.0, 0.2)
 
     def main(self, t, Tank, me, them):
         if len(them) == 0:
@@ -77,16 +77,16 @@ class Waypoint_PID_Controller(LaserTankController):
         # Fire when aim is close enough
         # but not during a turn or too close to a waypoint update
         ttg = (dist-d_thresh) / me["speed"]
-        fire = (abs(d_angle) < 4 and 0 < abs(me["spin"]) < 15 and ttg > 1.0)
+        fire = abs(d_angle) < 4 and 0 < abs(me["spin"]) < 15 and ttg > 0.5
 
-        return drive, turret_spin, fire
+        return np.tanh(drive), np.tanh(turret_spin), fire
 
 
 def waypoint():
     # Create an infinite generator of waypoints, cycling through the list
     from itertools import cycle
-    # For a 40x40 arena size
-    pts = [(5, 5), (35, 5), (35, 35), (5, 35)]
+    # For a 400x400 arena size
+    pts = [(50, 50), (350, 50), (350, 350), (50, 350)]
     for point in cycle(pts):
         yield np.array(point)
 
