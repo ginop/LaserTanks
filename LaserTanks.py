@@ -35,9 +35,10 @@ class Game():
          self.tanks = tanks
          for tank in tanks:
              tank.game = self
-             self.space.add(tank.body, tank.box)
+             self.space.add(tank.body, tank.box, tank.turret_body, tank.turret_circle, tank.pivot, tank.pivot_friction)
 
          # add walls
+         # TODO: put this in a loop or function to reduce duplicate code
          fric = 0.6
          wall_width = 10  # wider (thicker) walls reduce chances of escape
 
@@ -201,9 +202,8 @@ class Game():
             # Call hook for pre-step functions
             self.pre_step()
 
-            public_info = [tank.public() for tank in self.tanks]
-            public_info = [[info for them, info in zip(self.tanks, public_info) if them is not me] for me in self.tanks]
-
+            public_info = [[them.public() for them in self.tanks
+                            if them is not me] for me in self.tanks]
             [T.update(self.dt, self.time, P) for T, P in zip(self.tanks, public_info)]
             [T.apply_forces() for T in self.tanks]
             self.space.step(self.dt)  # pymunk magic
@@ -279,10 +279,10 @@ if __name__ == "__main__":
     screen_height = 400
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
              [screen_width/8, screen_height/2], [-90, 0])
-    B = Tank('RandomController', (0, 50, 255),
+    B = Tank('SimpleController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [135, 0])
     game = Game(tanks=[R, B], screen_width=screen_width,
-                screen_height=screen_height, real_time=True, fps=60, dt=1/60/4)
+                screen_height=screen_height, real_time=False, fps=60, dt=1/240)
 
     game.run()
     game.quit()

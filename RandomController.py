@@ -18,7 +18,7 @@ class RandomController(LaserTankController):
         them = them[0]  # only concerned with one target
 
         self.drive *= 1 - self.alpha
-        self.drive += self.alpha * np.random.uniform(-0.2, 1.0, (2))
+        self.drive += self.alpha * np.random.uniform(-0.6, 1.0, (2))
 
         # Use a PID controller to keep the turret focused on the enemy
         vec = them['position'] - me['position']

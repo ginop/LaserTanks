@@ -77,7 +77,7 @@ class Tank():
         self.color = color
 
         # Create the pymunk object that will be used for collision detection and resolution
-        mass = 10
+        mass = 100
         size = (max(self.body_length, self.tread_length),
                 self.body_width+2*(self.tread_width-self.tread_overlap))
         moment = pymunk.moment_for_box(mass, size)
@@ -86,6 +86,25 @@ class Tank():
         self.box.friction = 0.5
         self.body.position = self.position
         self.body.angle = self.orientation[0]*pi/180
+        # And add turret pymunk object with pivot joint with friction
+        turret_mass = 20
+        barrel_mass = 4
+        mass = turret_mass + barrel_mass
+        moment = turret_mass/2*self.turret_radius**2 + \
+                 barrel_mass/3*self.barrel_length**2
+        self.turret_body = pymunk.Body(mass, moment)
+        self.turret_body.position = self.position
+        self.turret_body.angle = (self.orientation[0] +
+                                  self.orientation[1])*pi/180
+        self.turret_circle = pymunk.Circle(self.turret_body,
+                                           self.turret_radius)
+        self.pivot = pymunk.constraint.PivotJoint(self.body,
+                                                  self.turret_body,
+                                                  (0, 0), (0, 0))
+        self.pivot.collide_bodies = False
+        # Create friction between the two with a damped spring with no spring constant
+        self.pivot_friction = pymunk.constraint.DampedRotarySpring(self.body, self.turret_body, 0, 0, 5e3)
+
 
     def draw(self):
         # Specify tank shape centered on origin with 0 rotation (pointed right)
@@ -180,12 +199,12 @@ class Tank():
     def apply_forces(self):
 
         # Calculate tank's net force, torque from treads and friction
-        half_width = 20
+        half_width = self.body_width/2+self.tread_width-self.tread_overlap
 
         direction = Vec2d(cos(self.body.angle), sin(self.body.angle))
         perp = direction.perpendicular()
 
-        tread_force_max = 200
+        tread_force_max = 8000
         Fl = self.drive[0] * tread_force_max * direction
         Fr = self.drive[1] * tread_force_max * direction
 
@@ -206,8 +225,8 @@ class Tank():
             self.body.velocity = forward_speed * direction
 
         # Apply friction forces
-        F -= 2*forward_speed*direction + 100*slip_speed*perp
-        T -= 10000*self.body.angular_velocity
+        F -= 200*forward_speed*direction + 1000*slip_speed*perp
+        T -= 100000*self.body.angular_velocity
 
         # Synthesize the net force and torque with F1 at CoM and F2 on edge
         F.rotate(-self.body.angle)  # from world to tank frame
@@ -216,9 +235,11 @@ class Tank():
         self.body.apply_force_at_local_point(F1, (0, 0))
         self.body.apply_force_at_local_point(F2, (0, -half_width))
 
-        #print(self.color)
-        #import ipdb
-        #ipdb.set_trace()
+        # Apply turret torque by applying mirrored forces on
+        # opposite sides of its axis of rotation
+        f = 1e4 * self.turret_torque / 2
+        self.turret_body.apply_force_at_local_point((0, f), ( 1, 0))
+        self.turret_body.apply_force_at_local_point((0,-f), (-1, 0))
 
     def move(self):
         dtheta = self.body.angle - self.orientation[0]*pi/180
@@ -226,6 +247,8 @@ class Tank():
 
         self.position = self.body.position
         self.orientation[0] = self.body.angle*180/pi
+        self.orientation[1] = (self.turret_body.angle -
+                               self.body.angle)*180/pi
 
         self.tread_offset += dpos.get_length()
         self.tread_offset += dtheta * self.body_width/2 * Vec2d(-1,1)
@@ -235,9 +258,9 @@ class Tank():
                 "orientation": self.orientation,
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color,
-                "spin": self.spin,
-                "speed": self.speed,
-                "turret_spin": self.turret_spin,
+                "spin": self.body.angular_velocity*180/pi,
+                "speed": self.body.velocity.get_length(),
+                "turret_spin": self.turret_body.angular_velocity*180/pi,
                 "hull": self.hull,
                 "battery": self.battery}
 
