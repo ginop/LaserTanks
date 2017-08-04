@@ -77,7 +77,9 @@ class Waypoint_PID_Controller(LaserTankController):
         # Fire when aim is close enough
         # but not during a turn or too close to a waypoint update
         ttg = (dist-d_thresh) / me["speed"]
-        fire = (abs(d_angle) < 4 and 0 < abs(me["spin"]) < 15 and ttg > 1.0)
+        fire = (abs(d_angle) < 4 and
+                0 < abs(me["spin"]) < 15 and
+                ttg > 1.0)
 
         return drive, turret_spin, fire
 

@@ -6,6 +6,7 @@ import pygame as pg
 # specifically imported. from pygame import * would not include it.
 from pygame import gfxdraw
 from Tank import Tank
+from Obstacle import Obstacle
 from time import time as pytime
 
 
@@ -15,13 +16,16 @@ def do_nothing(*args, **kwargs):
 
 class Game():
 
-    def __init__(self, tanks=[], px=20, screen_width=40, screen_height=40,
+    def __init__(self, tanks=[], obstacles=[], px=20, screen_width=40, screen_height=40,
                  real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
                  post_step=do_nothing, draw=True, max_time=np.inf,
                  end_on_win=True):
         for tank in tanks:
             tank.game = self
         self.tanks = tanks
+        for obstacle in obstacles:
+           obstacle.game = self
+        self.obstacles = obstacles
 
         self.px = px  # pixels per game unit
         self.screen_width = screen_width  # in game unites
@@ -183,6 +187,7 @@ class Game():
                     screen_time = pytime()-start
 
             if self.draw:
+                [Ob.draw() for Ob in self.obstacles]
                 [T.draw() for T in self.tanks]
                 [T.draw_laser() for T in self.tanks]
                 self.text("Time: {:.2f} ({:.2f}x real time)".format(self.time,
@@ -209,6 +214,7 @@ class Game():
             laser = shooter.get_beam()
             if laser is not None:
                 targets = [tank for tank in self.tanks if tank is not shooter]
+                targets += self.obstacles
                 dist = []
                 hit = []
                 for target in targets:
@@ -216,13 +222,15 @@ class Game():
                     if x is not None:
                         dist.append(x)
                         hit.append(target)
-                if len(dist) > 0:
+                if len(hit) > 0:  # hit anything
+                    # really only hit the first thing the laser touched
                     laser_length = min(dist)
                     hit = hit[dist.index(laser_length)]
-                    hit.hull -= dt*shooter.damage
-                    if hit.hull <= 0:
-                        self.tanks.remove(hit)
-                    shooter.laser_length = laser_length
+                    if isinstance(hit, Tank):
+                        hit.hull -= dt*shooter.damage
+                        if hit.hull <= 0:
+                            self.tanks.remove(hit)
+                        shooter.laser_length = laser_length
                 else:  # back to default, really-long laser_length
                     shooter.laser_length = Tank.laser_length
 
@@ -231,11 +239,16 @@ if __name__ == "__main__":
 
     screen_width = 40
     screen_height = 40
-    R = Tank('RandomController', (200, 25, 0),
+    R = Tank('Waypoint_PID_Controller', (200, 25, 0),
              [screen_width/8, screen_height/2], [-90, 0])
     B = Tank('RandomController', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [90, 0])
-    game = Game(tanks=[R, B], screen_width=screen_width,
+
+    obs = [
+    Obstacle([screen_width/2, screen_width/2], 2, screen_width/2, 0.0)
+    ]
+
+    game = Game(tanks=[R, B], obstacles=obs, screen_width=screen_width,
                 screen_height=screen_height, real_time=True, fps=30, dt=0.01)
 
     game.run()

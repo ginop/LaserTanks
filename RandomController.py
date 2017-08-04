@@ -28,7 +28,7 @@ class RandomController(LaserTankController):
         d_angle = (d_angle + 180) % 360 - 180  # in +-180
         turret_spin = self.aim_pid.step(d_angle)
 
-        return np.tanh(self.drive), np.tanh(turret_spin), False
+        return np.tanh(self.drive), np.tanh(turret_spin), True
 
 
 class PID():

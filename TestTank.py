@@ -1,9 +1,9 @@
 import unittest
 import numpy as np
 from Tank import Tank
+import LaserTankUtilities as util
 
-
-class SimplisticTest(unittest.TestCase):
+class Test(unittest.TestCase):
 
     def test_create_tank(self):
         """Should be able to define position and orientation as list or tuple
@@ -76,6 +76,19 @@ class SimplisticTest(unittest.TestCase):
         hit_test((2, 2, -135), 2*np.sqrt(2) - 1)
         T.orientation[0] = 45.0
         hit_test((-2, -2, 45), 2*np.sqrt(2) - 1)
+
+    def test_polygon_intersection(self):
+        """Test the polygon intersection function on various shapes"""
+        A = [[1, 1], [3, 1], [2, 3]]  # triangle
+        B = [[2, 2], [3, 2], [3, 3], [2, 3]]  # square, intersects A
+        C = [[1, 0], [6, 0], [6, 1], [1, 1]]  # rectangle, intersects A
+
+        self.assertTrue(util.polygons_overlap(A, B))
+        self.assertTrue(util.polygons_overlap(B, A))
+        self.assertTrue(util.polygons_overlap(A, C))
+        self.assertTrue(util.polygons_overlap(C, A))
+        self.assertFalse(util.polygons_overlap(B, C))
+        self.assertFalse(util.polygons_overlap(C, B))
 
 
 if __name__ == '__main__':

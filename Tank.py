@@ -2,25 +2,7 @@ import numpy as np
 from math import pi
 from importlib import import_module
 from scipy.integrate import quad, odeint
-
-
-def rotate(points, angle):
-    """
-    A helper function for 2D rotations.
-    Inputs:
-        points: a nx2 numpy array
-        angle: rotation angle in degrees
-    Outputs:
-        points: nx2 rotated array
-    """
-    ca = np.cos(angle*pi/180)
-    sa = np.sin(angle*pi/180)
-    R = np.array([[ca, -sa], [sa, ca]])  # positive is CCW
-    R.shape += (1,)  # add dim for broadcasting over n points
-    points = points.T
-    points.shape = (1,) + points.shape  # 1x2xn
-    points = (R*points).sum(axis=1).T  # do rotation and return original shape
-    return points
+from LaserTankUtilities import rotate
 
 
 class Tank():
@@ -232,6 +214,30 @@ class Tank():
         x0 = (x, y, dx, dy, a1, w1, a2, w2)
         x1 = odeint(move_ode, x0, [0, dt], rtol=1e-3, atol=1e-2)
         x, y, dx, dy, a1, w1, a2, w2 = x1[1, :]
+
+        # Update position so that get_hitbox returns post ODE positions
+        self.position[0] = x
+        self.position[1] = y
+        self.orientation = [a1 * 180/pi, a2 * 180/pi]
+
+        # TODO implement rotation caused by collisions
+        # TODO add friction to wall and obstacle interactions
+
+        # Enforce obstacle collisions
+        # The simple method used here examines the straight line between the
+        # previous and new positions and, if it intersects an obstacle, removes
+        # enough of the perpendicular component of that displacement so that
+        # the tank no longer overlaps the obstacle and adjusts the velocity
+        # accordingly. In the case where the tank collides with the corner of
+        # the obstacle, the tank is moved perpendicular to the intersecting
+        # face and is allowed to slide on the corner parallel to that face.
+        delta_x = x1[0] - x0[0]
+        delta_y = x1[0] - x0[0]
+
+        # Update position for post obstacle collision get_hitbox
+        self.position[0] = x
+        self.position[1] = y
+        self.orientation = [a1 * 180/pi, a2 * 180/pi]
 
         # Enforce walls
         pts = self.get_hitbox()
