@@ -7,13 +7,13 @@ class RandomController(LaserTankController):
 
     def __init__(self):
         self.alpha = 1/10
-        self.drive = np.array([0., 0.])
-        self.aim_pid = PID(1.0, 0.01, 0.1)
+        self.drive = np.array([0.0, 0.0])
+        self.aim_pid = PID(10.0, 0.0, 10.0)
 
     def main(self, t, Tank, me, them):
 
         if len(them) == 0:
-            them = [{"position": np.array([20., 20.])}]
+            them = [{"position": np.array([200., 200.])}]
 
         them = them[0]  # only concerned with one target
 
@@ -22,13 +22,13 @@ class RandomController(LaserTankController):
 
         # Use a PID controller to keep the turret focused on the enemy
         vec = them['position'] - me['position']
-        angle = np.arctan2(vec[1], vec[0])*180/pi - me['orientation'][0]
+        angle = np.arctan2(vec[1], vec[0])
         # Determine difference between aim and desired aim for PID controller
         d_angle = angle - me['orientation'][1]
-        d_angle = (d_angle + 180) % 360 - 180  # in +-180
+        d_angle = (d_angle + pi) % (2*pi) - pi  # in +-pi
         turret_spin = self.aim_pid.step(d_angle)
 
-        return np.tanh(self.drive), np.tanh(turret_spin), False
+        return np.tanh(self.drive), np.tanh(turret_spin), True
 
 
 class PID():

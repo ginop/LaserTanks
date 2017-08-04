@@ -11,12 +11,12 @@ def rotate(points, angle):
     A helper function for 2D rotations.
     Inputs:
         points: a nx2 numpy array
-        angle: rotation angle in degrees
+        angle: rotation angle in radians
     Outputs:
         points: nx2 rotated array
     """
-    ca = np.cos(angle*pi/180)
-    sa = np.sin(angle*pi/180)
+    ca = np.cos(angle)
+    sa = np.sin(angle)
     R = np.array([[ca, -sa], [sa, ca]])  # positive is CCW
     R.shape += (1,)  # add dim for broadcasting over n points
     points = points.T
@@ -49,30 +49,17 @@ class Tank():
         # Load named module and instantiate object of class with same name
         self.control = import_module(control).__dict__[control]()
 
-        """Traditional x (horizontal, positive to the right) and y (vertical,
-        positive up) coordinates with origin at lower left corner of arena."""
-        self.position = np.array(pos).astype(float)
-        """First element is right-handed rotation of body in arena with 0 on
-        x-axis and positive angles rotating CCW. Second is similarly defined
-        angle between body an dturret, 0 is forward. In degrees."""
-        self.orientation = np.array(orient).astype(float)
-        """Tank speed, always in the forward direction."""
-        self.speed = 0.
-        """Rate of change of self.orientation[0]"""
-        self.spin = 0.
-
         self.drive = np.array([0., 0.])  # normalized L, R tread force (in +-1)
-        self.tread_offset = np.array([0., 0.])  # for animating treads
-
         self.turret_torque = 0.  # normalized turret torque (in +-1)
-        self.turret_spin = 0.  # turret spin in degrees per sec
+
+        self.tread_offset = np.array([0., 0.])  # for animating treads
 
         self.shoot = False  # command to fire laser
         self.time_to_ready = self.reload_time
-        self.laser_length = Tank.laser_length  # made shorter on hit
+        self.laser_length = Tank.laser_length  # shorter when it hits something
 
         self.hull = 100.
-        self.battery = 100.
+        self.battery = 100.  # not used (yet)
         self.color = color
 
         # Create the pymunk object that will be used for collision detection and resolution
@@ -83,8 +70,8 @@ class Tank():
         self.body = pymunk.Body(mass, moment)
         self.box = pymunk.Poly.create_box(self.body, size, 0.1)  # round the corners a bit
         self.box.friction = 0.5
-        self.body.position = self.position
-        self.body.angle = self.orientation[0]*pi/180
+        self.body.position = pos
+        self.body.angle = orient[0]
         # And add turret pymunk object with pivot joint with friction
         turret_mass = 20
         barrel_mass = 4
@@ -92,9 +79,8 @@ class Tank():
         moment = turret_mass/2*self.turret_radius**2 + \
                  barrel_mass/3*self.barrel_length**2
         self.turret_body = pymunk.Body(mass, moment)
-        self.turret_body.position = self.position
-        self.turret_body.angle = (self.orientation[0] +
-                                  self.orientation[1])*pi/180
+        self.turret_body.position = pos
+        self.turret_body.angle = orient[1]
         self.turret_circle = pymunk.Circle(self.turret_body,
                                            self.turret_radius)
         self.pivot = pymunk.constraint.PivotJoint(self.body,
@@ -117,16 +103,16 @@ class Tank():
                   [Tank.barrel_length/2, 0])
 
         # Rotate treads and body
-        body = rotate(body, self.orientation[0])
-        tread_r = rotate(tread_r, self.orientation[0])
-        tread_l = rotate(tread_l, self.orientation[0])
+        body = rotate(body, self.body.angle)
+        tread_r = rotate(tread_r, self.body.angle)
+        tread_l = rotate(tread_l, self.body.angle)
         # Rotate barrel
-        barrel = rotate(barrel, self.orientation[0]+self.orientation[1])
+        barrel = rotate(barrel, self.turret_body.angle)
         # Translate all pieces
-        body += self.position
-        tread_r += self.position
-        tread_l += self.position
-        barrel += self.position
+        body += self.body.position
+        tread_r += self.body.position
+        tread_l += self.body.position
+        barrel += self.body.position
 
         # Draw the pieces as filled shapes with antialiased edges
         self.game.polygon(tread_r, self.color)
@@ -141,16 +127,16 @@ class Tank():
                 y1 = Tank.body_width/2 - Tank.tread_overlap
                 y2 = Tank.body_width/2 + Tank.tread_width - Tank.tread_overlap
                 pts = np.array([[x, sign*y1], [x, sign*y2]])
-                pts = rotate(pts, self.orientation[0])
-                pts += self.position
+                pts = rotate(pts, self.body.angle)
+                pts += self.body.position
                 self.game.line(pts, (0, 0, 0))
 
         self.game.polygon(body, (0, 0, 0))
         self.game.polygon(barrel, self.color)
-        self.game.circle(self.position, self.turret_radius, self.color)
+        self.game.circle(self.turret_body.position, self.turret_radius, self.color)
 
         # print HP on tank turret
-        self.game.text("{:.0f}".format(self.hull), self.position,
+        self.game.text("{:.0f}".format(self.hull), self.turret_body.position,
                        (0, 0, 0), centered=True)
 
     def draw_laser(self):
@@ -159,12 +145,12 @@ class Tank():
         if self.time_to_ready > self.reload_time:
             laser = (u * [self.laser_length, self.laser_width] +
                      [self.barrel_length + self.laser_length/2, 0])
-            laser = rotate(laser, self.orientation[0]+self.orientation[1])
-            laser += self.position
+            laser = rotate(laser, self.turret_body.angle)
+            laser += self.turret_body.position
             self.game.polygon(laser, self.color)
             center = self.barrel_length + self.laser_length
-            a = (self.orientation[0]+self.orientation[1])*pi/180
-            center = [center*np.cos(a), center*np.sin(a)] + self.position
+            a = self.turret_body.angle
+            center = [center*np.cos(a), center*np.sin(a)] + self.turret_body.position
             self.game.circle(center, self.blast_radius, self.color)
 
     def update(self, dt, t, target_info):
@@ -191,8 +177,8 @@ class Tank():
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         hitbox = u * [self.tread_length,
                       self.body_width+2*(self.tread_width-self.tread_overlap)]
-        hitbox = rotate(hitbox, self.orientation[0])
-        hitbox += self.position
+        hitbox = rotate(hitbox, self.body.angle)
+        hitbox += self.body.position
         return hitbox
 
     def apply_forces(self):
@@ -240,42 +226,44 @@ class Tank():
         self.turret_body.apply_force_at_local_point((0, f), ( 1, 0))
         self.turret_body.apply_force_at_local_point((0,-f), (-1, 0))
 
-    def move(self):
-        dtheta = self.body.angle - self.orientation[0]*pi/180
-        dpos = self.body.position - self.position
+    def move(self, dt):
+        dtheta = self.body.angular_velocity * dt
 
-        self.position = self.body.position
-        self.orientation[0] = self.body.angle*180/pi
-        self.orientation[1] = (self.turret_body.angle -
-                               self.body.angle)*180/pi
+        direction = Vec2d(cos(self.body.angle), sin(self.body.angle))
+        forward_speed = direction.dot(self.body.velocity)
+        dpos = forward_speed * dt
 
-        self.tread_offset += dpos.get_length()
+        #self.position = self.body.position
+        #self.orientation[0] = self.body.angle*180/pi
+        #self.orientation[1] = (self.turret_body.angle -
+        #                       self.body.angle)*180/pi
+
+        self.tread_offset += dpos
         self.tread_offset += dtheta * self.body_width/2 * Vec2d(-1,1)
 
     def info(self):
-        return {"position": self.position,
-                "orientation": self.orientation,
+        return {"position": self.body.position,
+                "orientation": [self.body.angle, self.turret_body.angle],
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color,
-                "spin": self.body.angular_velocity*180/pi,
-                "speed": self.body.velocity.get_length(),
-                "turret_spin": self.turret_body.angular_velocity*180/pi,
+                "velocity": self.body.velocity,
+                "spin": self.body.angular_velocity,
+                "turret_spin": self.turret_body.angular_velocity,
                 "hull": self.hull,
                 "battery": self.battery}
 
     def public(self):
-        return {"position": self.position,
-                "orientation": self.orientation,
+        return {"position": self.body.position,
+                "orientation": [self.body.angle, self.turret_body.angle],
                 "is_firing": self.time_to_ready > self.reload_time,
                 "color": self.color}
 
     def get_beam(self):
         if self.time_to_ready > self.reload_time:
             barrel = np.array([[Tank.barrel_length, 0]])
-            barrel = rotate(barrel, self.orientation[0]+self.orientation[1])
-            barrel += self.position
-            return (barrel[0, 0], barrel[0, 1],
-                    self.orientation[0]+self.orientation[1])
+            barrel = rotate(barrel, self.turret_body.angle)
+            barrel += self.body.position
+            return (barrel[0, 0], barrel[0, 1], self.turret_body.angle)
         else:
             return None
 
