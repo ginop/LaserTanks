@@ -344,13 +344,17 @@ if __name__ == "__main__":
 
     screen_width = 400
     screen_height = 400
+
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
              [screen_width/8, screen_height/2], [-pi/2, -pi/2])
-    B = Tank('RandomController', (0, 50, 255),
+    R.control.waypoint_gen = R.control.waypoint()
+
+    B = Tank('Waypoint_PID_Controller', (0, 50, 255),
              [screen_width*3/4, screen_height/2], [3*pi/2, 3*pi/2])
+
     game = Game(tanks=[R, B], screen_width=screen_width,
                 screen_height=screen_height, real_time=True,
-                fps=60, dt=1/400, end_on_win=False)
+                fps=60, dt=1/100, end_on_win=False)
 
     game.run()
     game.quit()

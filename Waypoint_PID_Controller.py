@@ -25,10 +25,10 @@ def rotate(points, angle):
 class Waypoint_PID_Controller(LaserTankController):
 
     def __init__(self):
-        self.waypoint_gen = waypoint()
+        self.waypoint_gen = self.random_waypoint()
         self.destination = next(self.waypoint_gen)
         self.drive_pid = PID(0.5, 0.0, 0.8)
-        self.aim_pid = PID(10.0, 0.0, 10.0)
+        self.aim_pid = PID(100.0, 0.0, 0.0)
 
     def main(self, t, Tank, me, them):
         if len(them) == 0:
@@ -77,21 +77,21 @@ class Waypoint_PID_Controller(LaserTankController):
         ttg = (dist-d_thresh) / me["velocity"].get_length()
         fire = abs(d_angle) < 4 and 0 < abs(me["spin"]) < 15 and ttg > 0.5
 
-        return np.tanh(drive), np.tanh(turret_spin), fire
+        return np.tanh(drive), np.tanh(turret_spin), True
+
+    def waypoint(self):
+        # Create an infinite generator of waypoints, cycling through the list
+        from itertools import cycle
+        # For a 400x400 arena size
+        pts = [(50, 50), (350, 50), (350, 350), (50, 350)]
+        for point in cycle(pts):
+            yield np.array(point)
 
 
-def waypoint():
-    # Create an infinite generator of waypoints, cycling through the list
-    from itertools import cycle
-    # For a 400x400 arena size
-    pts = [(50, 50), (350, 50), (350, 350), (50, 350)]
-    for point in cycle(pts):
-        yield np.array(point)
-
-
-def random_waypoint():
-    while True:
-        yield np.random.rand(2) * 36. + 2.
+    def random_waypoint(self):
+        while True:
+            # For a 400x400 arena size
+            yield np.random.rand(2) * 300. + 50.
 
 
 class PID():
