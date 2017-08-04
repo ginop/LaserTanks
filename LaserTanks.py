@@ -34,12 +34,14 @@ class Task():
             self.timer = Timer(self.period, self.run)
             self.timer.daemon = True  # Don't keep python running for this task
             self.timer.start()
-            try:
+
+            self.callback(*self.args)
+            """try:
                 self.callback(*self.args)
             except:
                 print('Task caused error. Terminating now.')
                 self.quit()
-                raise
+                raise"""
 
     def quit(self):
         self.lock.acquire()
@@ -236,7 +238,7 @@ class Game():
         [T.update(self.dt, self.time, P) for T, P in zip(self.tanks, public_info)]
         [T.apply_forces() for T in self.tanks]
         self.space.step(self.dt)  # pymunk magic
-        [T.move() for T in self.tanks]
+        [T.move(self.dt) for T in self.tanks]
         self.detect_hits(self.dt)
         # Call hook for post-step functions
         self.post_step()
@@ -343,9 +345,9 @@ if __name__ == "__main__":
     screen_width = 400
     screen_height = 400
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
-             [screen_width/8, screen_height/2], [-90, 0])
-    B = Tank('SimpleController', (0, 50, 255),
-             [screen_width*3/4, screen_height/2], [135, 0])
+             [screen_width/8, screen_height/2], [-pi/2, -pi/2])
+    B = Tank('RandomController', (0, 50, 255),
+             [screen_width*3/4, screen_height/2], [3*pi/2, 3*pi/2])
     game = Game(tanks=[R, B], screen_width=screen_width,
                 screen_height=screen_height, real_time=True,
                 fps=60, dt=1/400, end_on_win=False)
