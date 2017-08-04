@@ -6,7 +6,6 @@ from math import pi, degrees, radians
 from importlib import import_module
 from scipy.integrate import quad, odeint
 
-
 def rotate(points, angle):
     """
     A helper function for 2D rotations.

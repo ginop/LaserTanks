@@ -27,12 +27,12 @@ class Waypoint_PID_Controller(LaserTankController):
     def __init__(self):
         self.waypoint_gen = waypoint()
         self.destination = next(self.waypoint_gen)
-        self.drive_pid = PID(1.0, 0.0, 0.8)
+        self.drive_pid = PID(0.5, 0.0, 0.8)
         self.aim_pid = PID(0.2, 0.0, 0.2)
 
     def main(self, t, Tank, me, them):
         if len(them) == 0:
-            them = [{"position": np.array([20., 20.])}]
+            them = [{"position": np.array([200., 200.])}]
 
         them = them[0]  # only concerned with one target
 
