@@ -1,24 +1,27 @@
-#!python3
-import numpy as np
-import pymunk
-from pymunk.vec2d import Vec2d
-from math import sqrt, cos, sin, pi
+"""Define the Laser Tanks Game class
+
+"""
+from math import pi
+import numpy as np  # barely used. replace with something simpler?
 import pygame as pg
-# gfxdraw is a submodule (a child directory in the pygame folder) so it must be
-# specifically imported. "from pygame import *" would not include it.
-from pygame import gfxdraw
 from pygame import freetype
+from pygame import gfxdraw
+import pymunk
 from Tank import Tank
-from threading import Thread, Timer, Lock
+from threading import Timer, Lock
 from time import sleep
 
 
 def do_nothing(*args, **kwargs):
-    """A placeholder for function-call hooks in a Game"""
+    """Do nothing.
+
+    A placeholder for function-call hooks in a Game.
+    """
     pass
 
 
-class Task():
+class _Task():
+    """Manage fixed rate execution scheduling."""
 
     def __init__(self, period, callback, *args):
         self.period = period
@@ -28,9 +31,7 @@ class Task():
         self.lock = Lock()
 
     def run(self):
-        #print('Checking Task Lock.')
         with self.lock:
-            #print('Was Unlocked, executing task.')
             self.timer = Timer(self.period, self.run)
             self.timer.daemon = True  # Don't keep python running for this task
             self.timer.start()
@@ -56,8 +57,7 @@ class Task():
 
 
 class Game():
-    """ The Laser Tanks Game object
-    Manage game components, simulation, and visualization.
+    """Manage Laser Tanks game components, simulation, and visualization.
 
     Properties:
       tanks: a list of Tank objects that will compete in the game
@@ -80,84 +80,84 @@ class Game():
                  real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
                  post_step=do_nothing, draw=True, max_time=np.inf,
                  end_on_win=True):
-         self.px = px  # pixels per game unit
-         self.screen_width = screen_width  # in game units
-         self.screen_height = screen_height  # in game units
-         self.real_time = real_time
-         self.fps = fps
-         self.dt = dt
-         self.pre_step = pre_step
-         self.post_step = post_step
-         self.draw = draw
-         self.max_time = max_time
-         self.end_on_win = end_on_win
+        self.px = px  # pixels per game unit
+        self.screen_width = screen_width  # in game units
+        self.screen_height = screen_height  # in game units
+        self.real_time = real_time
+        self.fps = fps
+        self.dt = dt
+        self.pre_step = pre_step
+        self.post_step = post_step
+        self.draw = draw
+        self.max_time = max_time
+        self.end_on_win = end_on_win
 
-         # Set up pymunk space and add tank parts
-         self.space = pymunk.Space()
-         self.tanks = tanks
-         for tank in tanks:
-             tank.game = self
-             self.space.add(tank.body, tank.box, tank.turret_body, tank.turret_circle, tank.pivot, tank.pivot_friction)
+        # Set up pymunk space and add tank parts
+        self.space = pymunk.Space()
+        self.tanks = tanks
+        for tank in tanks:
+            tank.game = self
+            self.space.add(tank.body, tank.box, tank.turret_body, tank.turret_circle, tank.pivot, tank.pivot_friction)
 
-         # add walls
-         # TODO: put this in a loop or function to reduce duplicate code
-         fric = 0.6
-         wall_width = 10  # wider (thicker) walls reduce chances of escape
+        # add walls
+        # TODO: put this in a loop or function to reduce duplicate code
+        fric = 0.6
+        wall_width = 10  # wider (thicker) walls reduce chances of escape
 
-         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
-         line = pymunk.Segment(wall,
-                               (-wall_width, 0),
-                               (-wall_width, self.screen_height),
-                               wall_width)
-         line.friction = fric
-         self.space.add(wall, line)
+        wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+        line = pymunk.Segment(wall,
+                              (-wall_width, 0),
+                              (-wall_width, self.screen_height),
+                              wall_width)
+        line.friction = fric
+        self.space.add(wall, line)
 
-         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
-         line = pymunk.Segment(wall,
-                               (0, -wall_width),
-                               (self.screen_height, -wall_width),
-                               wall_width)
-         line.friction = fric
-         self.space.add(wall, line)
+        wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+        line = pymunk.Segment(wall,
+                              (0, -wall_width),
+                              (self.screen_height, -wall_width),
+                              wall_width)
+        line.friction = fric
+        self.space.add(wall, line)
 
-         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
-         line = pymunk.Segment(wall,
-                               (0, self.screen_height+wall_width),
-                               (self.screen_height, self.screen_height+wall_width),
-                               wall_width)
-         line.friction = fric
-         self.space.add(wall, line)
+        wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+        line = pymunk.Segment(wall,
+                              (0, self.screen_height + wall_width),
+                              (self.screen_height, self.screen_height + wall_width),
+                              wall_width)
+        line.friction = fric
+        self.space.add(wall, line)
 
-         wall = pymunk.Body(body_type=pymunk.Body.STATIC)
-         line = pymunk.Segment(wall,
-                               (self.screen_height+wall_width, 0),
-                               (self.screen_height+wall_width, self.screen_height),
-                               wall_width)
-         line.friction = fric
-         self.space.add(wall, line)
+        wall = pymunk.Body(body_type=pymunk.Body.STATIC)
+        line = pymunk.Segment(wall,
+                              (self.screen_height + wall_width, 0),
+                              (self.screen_height + wall_width, self.screen_height),
+                              wall_width)
+        line.friction = fric
+        self.space.add(wall, line)
 
-         # Initialize game state params
-         self.time = 0
-         self.runtime = 0
-         self.winner = None
-         self.running = False
-         self.screen = []
-         if self.draw:
-             # Use DOUBLEBUF to speed up pygame drawing
-             self.screen = pg.display.set_mode((self.screen_width*self.px,
-                                                self.screen_height*self.px),
-                                                pg.DOUBLEBUF | pg.ASYNCBLIT)
-             self.screen.set_alpha(None)  # For optimization purposes
-             pg.display.set_caption("Laser Tanks!")  # The window title
-             pg.init()  # must be called before pg.font.SysFont()
-             self.font = freetype.SysFont("monospace", 12)
+        # Initialize game state params
+        self.time = 0
+        self.runtime = 0
+        self.winner = None
+        self.running = False
+        self.screen = []
+        if self.draw:
+            # Use DOUBLEBUF to speed up pygame drawing
+            self.screen = pg.display.set_mode((self.screen_width * self.px,
+                                               self.screen_height * self.px),
+                                              pg.DOUBLEBUF | pg.ASYNCBLIT)
+            self.screen.set_alpha(None)  # For optimization purposes
+            pg.display.set_caption("Laser Tanks!")  # The window title
+            pg.init()  # must be called before pg.font.SysFont()
+            self.font = freetype.SysFont("monospace", 12)
 
     def text(self, str, pos, color, centered=False):
-        """
-        PyGame label printing function
+        """Print text to PyGame screen.
+
         Inputs:
             str: the text to print
-            pos: the position in game units of top left corner (or centered)
+            pos: the position in game units of top left corner (or center)
             color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
             centered: interpret pos as text center, not corner
         """
@@ -166,14 +166,13 @@ class Game():
         pos *= self.px
         if centered:
             r = self.font.get_rect(str)
-            pos -= [r.width/2., r.height/2.]
+            pos -= [r.width / 2., r.height / 2.]
         pos = pos.astype(int)  # cast as int rather than round for speed
-        label = self.font.render_to(self.screen, pos, str, fgcolor=color)
+        self.font.render_to(self.screen, pos, str, fgcolor=color)
 
     def line(self, points, color):
-        """
-        PyGame line printing helper function
-        Prints antialiased line, handling conversion from game units to pixels
+        """Print antialiased line, handling conversion from game units to pixels.
+
         Inputs:
             points: 2x2 numpy array of line end-points [[x1, y1], [x2, y2]]
             color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
@@ -183,10 +182,9 @@ class Game():
                        self.px*points[0, :], self.px*points[1, :])
 
     def polygon(self, points, color, edge_color=0):
-        """
-        PyGame polygon printing helper function
-        Prints a polygon with an antialiased edge, handling conversion from
-        game units to pixels
+        """Print a polygon with an antialiased edge, handling conversion from
+        game units to pixels.
+
         Inputs:
             points: 2x2 numpy array of line end-points [[x1, y1], [x2, y2]]
             color: a 3 or 4 tuple, RGB(A), of integers in [0, 255]
@@ -205,10 +203,9 @@ class Game():
                               (self.px*points).astype(int), edge_color)
 
     def circle(self, center, radius, color, edge_color=0):
-        """
-        PyGame circle printing helper function
-        Prints a circle with an antialiased edge, handling conversion from game
-        units to pixels
+        """Print a circle with an antialiased edge, handling conversion from game
+        units to pixels.
+
         Inputs:
             center: sequence of x and y coordinates of circle center
             radius: radius of the circle
@@ -219,13 +216,13 @@ class Game():
         if edge_color is 0:
             edge_color = color
         if color is not None:
-            gfxdraw.filled_circle(self.screen, int(self.px*center[0]),
-                                  int(self.px * (self.screen_height-center[1])),
-                                  int(self.px*radius), color)
+            gfxdraw.filled_circle(self.screen, int(self.px * center[0]),
+                                  int(self.px * (self.screen_height - center[1])),
+                                  int(self.px * radius), color)
         if edge_color is not None:
-            gfxdraw.aacircle(self.screen, int(self.px*center[0]),
-                             int(self.px * (self.screen_height-center[1])),
-                             int(self.px*radius), edge_color)
+            gfxdraw.aacircle(self.screen, int(self.px * center[0]),
+                             int(self.px * (self.screen_height - center[1])),
+                             int(self.px * radius), edge_color)
 
     def update_tanks(self):
         # Update time for new simulation epoch
@@ -250,24 +247,24 @@ class Game():
         for x in range(0, self.screen_width, 10):
             for y in range(0, self.screen_height, 10):
                 pg.draw.circle(self.screen, (75, 75, 75),
-                               (int(self.px*(x+1/2)),
-                                int(self.px*(y+1/2))), int(self.px/5))
+                               (int(self.px * (x + 1 / 2)),
+                                int(self.px * (y + 1 / 2))),
+                               int(self.px / 5))
 
         [T.draw() for T in self.tanks]
         [T.draw_laser() for T in self.tanks]
 
         str = "Time: {:.2f} ({:.2f}x real time) {:.0f} fps"
         str = str.format(self.time,
-                         self.time*1e3/(pg.time.get_ticks()-self.starttime),
+                         self.time * 1e3 / (pg.time.get_ticks() - self.starttime),
                          self.clock.get_fps())
-        self.text(str, (2, self.screen_height-2), (255, 255, 255))
+        self.text(str, (2, self.screen_height - 2), (255, 255, 255))
 
         pg.display.flip()
         self.clock.tick()
 
     def run(self):
         self.clock = pg.time.Clock()
-        screen_time = 0
 
         if self.draw:
             self.screen.fill((50, 50, 50))
@@ -281,7 +278,7 @@ class Game():
         else:
             action = do_nothing
 
-        with Task(1/self.fps, action):
+        with _Task(1 / self.fps, action):
             self.running = True
             while self.running:
 
@@ -295,8 +292,8 @@ class Game():
 
                 # If applicable, limit to real-time by skipping rest of loop
                 if self.real_time and \
-                   (pg.time.get_ticks()-self.starttime)/1e3 < self.time:
-                    sleep(self.dt/10)
+                   (pg.time.get_ticks() - self.starttime) / 1e3 < self.time:
+                    sleep(self.dt / 10)
                     continue
 
                 self.update_tanks()
@@ -316,8 +313,11 @@ class Game():
         pg.quit()
 
     def detect_hits(self, dt):
-        """For each tank, search for a hit on each other tanks. Keep only the
-        first (closest) hit. Apply damage to hit tank."""
+        """Detect lasers hitting targets.
+
+        For each tank, search for a hit on each other tanks. Keep only the
+        first (closest) hit. Apply damage to hit tank.
+        """
         for shooter in self.tanks:
             laser = shooter.get_beam()
             if laser is not None:
@@ -332,7 +332,7 @@ class Game():
                 if len(dist) > 0:
                     laser_length = min(dist)
                     hit = hit[dist.index(laser_length)]
-                    hit.hull -= dt*shooter.damage
+                    hit.hull -= dt * shooter.damage
                     if hit.hull <= 0:
                         self.tanks.remove(hit)
                     shooter.laser_length = laser_length
@@ -346,15 +346,19 @@ if __name__ == "__main__":
     screen_height = 400
 
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
-             [screen_width/8, screen_height/2], [-pi/2, -pi/2])
+             [screen_width / 8, screen_height / 2],
+             [-pi / 2, -pi / 2])
+    # Replace random waypoint generator with corner track waypoint generator
     R.control.waypoint_gen = R.control.waypoint()
+    R.control.destination = next(R.control.waypoint_gen)
 
     B = Tank('Waypoint_PID_Controller', (0, 50, 255),
-             [screen_width*3/4, screen_height/2], [3*pi/2, 3*pi/2])
+             [screen_width * 3 / 4, screen_height / 2],
+             [3 * pi / 2, 3 * pi / 2])
 
     game = Game(tanks=[R, B], screen_width=screen_width,
                 screen_height=screen_height, real_time=True,
-                fps=60, dt=1/100, end_on_win=False)
+                fps=60, dt=1 / 100, end_on_win=False)
 
     game.run()
     game.quit()

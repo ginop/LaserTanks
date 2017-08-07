@@ -1,14 +1,13 @@
 import numpy as np
 import pymunk
 from pymunk.vec2d import Vec2d
-from math import sqrt, cos, sin, pi
-from math import pi, degrees, radians
+from math import cos, sin
 from importlib import import_module
-from scipy.integrate import quad, odeint
+
 
 def rotate(points, angle):
-    """
-    A helper function for 2D rotations.
+    """Rotate 2D vectors.
+
     Inputs:
         points: a nx2 numpy array
         angle: rotation angle in radians
@@ -21,12 +20,12 @@ def rotate(points, angle):
     R.shape += (1,)  # add dim for broadcasting over n points
     points = points.T
     points.shape = (1,) + points.shape  # 1x2xn
-    points = (R*points).sum(axis=1).T  # do rotation and return original shape
+    points = (R * points).sum(axis=1).T  # do rotation and return original shape
     return points
 
 
 class Tank():
-
+    """Define Tank player for Laser Tanks game."""
     # Define universal tank shape as Class (not instance) properties
     body_width = 20.
     body_length = 30.
@@ -65,7 +64,7 @@ class Tank():
         # Create the pymunk object that will be used for collision detection and resolution
         mass = 100
         size = (max(self.body_length, self.tread_length),
-                self.body_width+2*(self.tread_width-self.tread_overlap))
+                self.body_width + 2 * (self.tread_width - self.tread_overlap))
         moment = pymunk.moment_for_box(mass, size)
         self.body = pymunk.Body(mass, moment)
         self.box = pymunk.Poly.create_box(self.body, size, 0.1)  # round the corners a bit
@@ -76,8 +75,8 @@ class Tank():
         turret_mass = 20
         barrel_mass = 4
         mass = turret_mass + barrel_mass
-        moment = turret_mass/2*self.turret_radius**2 + \
-                 barrel_mass/3*self.barrel_length**2
+        moment = turret_mass / 2 * self.turret_radius ** 2 + \
+            barrel_mass / 3 * self.barrel_length ** 2
         self.turret_body = pymunk.Body(mass, moment)
         self.turret_body.position = pos
         self.turret_body.angle = orient[1]
@@ -96,11 +95,11 @@ class Tank():
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         body = u * [Tank.body_length, Tank.body_width]
         tread_r = (u * [Tank.tread_length, Tank.tread_width] +
-                   [0, Tank.body_width/2 + Tank.tread_width/2 -
+                   [0, Tank.body_width / 2 + Tank.tread_width / 2 -
                     Tank.tread_overlap])
         tread_l = -tread_r
         barrel = (u * [Tank.barrel_length, Tank.barrel_width] +
-                  [Tank.barrel_length/2, 0])
+                  [Tank.barrel_length / 2, 0])
 
         # Rotate treads and body
         body = rotate(body, self.body.angle)
@@ -122,11 +121,11 @@ class Tank():
         for offset, sign in zip(self.tread_offset, [1, -1]):
             n = 5
             for ii in range(n):
-                x = (Tank.tread_length*ii/n + offset) % Tank.tread_length
-                x -= Tank.tread_length/2
-                y1 = Tank.body_width/2 - Tank.tread_overlap
-                y2 = Tank.body_width/2 + Tank.tread_width - Tank.tread_overlap
-                pts = np.array([[x, sign*y1], [x, sign*y2]])
+                x = (Tank.tread_length * ii / n + offset) % Tank.tread_length
+                x -= Tank.tread_length / 2
+                y1 = Tank.body_width / 2 - Tank.tread_overlap
+                y2 = Tank.body_width / 2 + Tank.tread_width - Tank.tread_overlap
+                pts = np.array([[x, sign * y1], [x, sign * y2]])
                 pts = rotate(pts, self.body.angle)
                 pts += self.body.position
                 self.game.line(pts, (0, 0, 0))
@@ -141,16 +140,16 @@ class Tank():
 
     def draw_laser(self):
         # draw laser if shooting (indicated by time_to_read above reload_time)
-        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
+        u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]]) / 2
         if self.time_to_ready > self.reload_time:
             laser = (u * [self.laser_length, self.laser_width] +
-                     [self.barrel_length + self.laser_length/2, 0])
+                     [self.barrel_length + self.laser_length / 2, 0])
             laser = rotate(laser, self.turret_body.angle)
             laser += self.turret_body.position
             self.game.polygon(laser, self.color)
             center = self.barrel_length + self.laser_length
             a = self.turret_body.angle
-            center = [center*np.cos(a), center*np.sin(a)] + self.turret_body.position
+            center = [center * np.cos(a), center * np.sin(a)] + self.turret_body.position
             self.game.circle(center, self.blast_radius, self.color)
 
     def update(self, dt, t, target_info):
@@ -176,7 +175,7 @@ class Tank():
         # Determine hitbox for tank (just use body, not treads, for simplicity)
         u = np.array([[-1, -1], [1, -1], [1, 1], [-1, 1]])/2
         hitbox = u * [self.tread_length,
-                      self.body_width+2*(self.tread_width-self.tread_overlap)]
+                      self.body_width + 2 * (self.tread_width - self.tread_overlap)]
         hitbox = rotate(hitbox, self.body.angle)
         hitbox += self.body.position
         return hitbox
@@ -184,7 +183,7 @@ class Tank():
     def apply_forces(self):
 
         # Calculate tank's net force, torque from treads and friction
-        half_width = self.body_width/2+self.tread_width-self.tread_overlap
+        half_width = self.body_width / 2 + self.tread_width - self.tread_overlap
 
         direction = Vec2d(cos(self.body.angle), sin(self.body.angle))
         perp = direction.perpendicular()
@@ -196,9 +195,9 @@ class Tank():
         # Calculate commanded forces
         F = Fr + Fl
         F = Vec2d(F[0], F[1])
-        T = Vec2d(0,-half_width)
+        T = Vec2d(0, -half_width)
         T.rotate(self.body.angle)
-        T = T.cross(Fr-Fl)
+        T = T.cross(Fr - Fl)
 
         # Determine if tank is able to turn
         forward_speed = direction.dot(self.body.velocity)
@@ -210,12 +209,12 @@ class Tank():
             self.body.velocity = forward_speed * direction
 
         # Apply friction forces
-        F -= 200*forward_speed*direction + 1000*slip_speed*perp
-        T -= 100000*self.body.angular_velocity
+        F -= 200 * forward_speed * direction + 1000 * slip_speed*perp
+        T -= 100000 * self.body.angular_velocity
 
         # Synthesize the net force and torque with F1 at CoM and F2 on edge
         F.rotate(-self.body.angle)  # from world to tank frame
-        F2 = Vec2d(T/half_width, 0)  # in tank frame
+        F2 = Vec2d(T / half_width, 0)  # in tank frame
         F1 = F - F2  # in tank frame
         self.body.apply_force_at_local_point(F1, (0, 0))
         self.body.apply_force_at_local_point(F2, (0, -half_width))
@@ -223,8 +222,8 @@ class Tank():
         # Apply turret torque by applying mirrored forces on
         # opposite sides of its axis of rotation
         f = 1e4 * self.turret_torque / 2
-        self.turret_body.apply_force_at_local_point((0, f), ( 1, 0))
-        self.turret_body.apply_force_at_local_point((0,-f), (-1, 0))
+        self.turret_body.apply_force_at_local_point((0, f), (1, 0))
+        self.turret_body.apply_force_at_local_point((0, -f), (-1, 0))
 
     def move(self, dt):
         dtheta = self.body.angular_velocity * dt
@@ -233,13 +232,8 @@ class Tank():
         forward_speed = direction.dot(self.body.velocity)
         dpos = forward_speed * dt
 
-        #self.position = self.body.position
-        #self.orientation[0] = self.body.angle*180/pi
-        #self.orientation[1] = (self.turret_body.angle -
-        #                       self.body.angle)*180/pi
-
         self.tread_offset += dpos
-        self.tread_offset += dtheta * self.body_width/2 * Vec2d(-1,1)
+        self.tread_offset += dtheta * self.body_width / 2 * Vec2d(-1, 1)
 
     def info(self):
         return {"position": self.body.position,
@@ -285,8 +279,8 @@ class Tank():
         for ii in range(4):
             x1 = hitbox[ii, 0]
             y1 = hitbox[ii, 1]
-            x2 = hitbox[ii+1, 0]
-            y2 = hitbox[ii+1, 1]
+            x2 = hitbox[ii + 1, 0]
+            y2 = hitbox[ii + 1, 1]
             if x1 >= 0 or x2 >= 0:
                 # testing against 0 doesn't work in all cases because of
                 # rounding errors so we test agianst this theshold instead.
@@ -295,9 +289,9 @@ class Tank():
                     """when both points lie on the x axis, the hit occurs at
                     the lower non-negative number, or at 0 if one is negative
                     (which would indicate a tank crash)"""
-                    dist.append(max(0, hitbox[ii:ii+1, 0].min()))
+                    dist.append(max(0, hitbox[ii:ii + 1, 0].min()))
                 elif (y1 <= e and y2 >= -e) or (y1 >= -e and y2 <= e):
-                    dist.append(max(0, x1 - y1*(x2-x1)/(y2-y1)))
+                    dist.append(max(0, x1 - y1 * (x2 - x1) / (y2 - y1)))
         if len(dist) > 0:
             return min(dist)
         else:
