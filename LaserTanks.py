@@ -1,8 +1,10 @@
+#!python3
 """Define the Laser Tanks Game class
 
 """
 from math import pi
 import numpy as np  # barely used. replace with something simpler?
+from Obstacle import Obstacle
 import pygame as pg
 from pygame import freetype
 from pygame import gfxdraw
@@ -39,7 +41,7 @@ class _Task():
             self.callback(*self.args)
             """try:
                 self.callback(*self.args)
-            except:
+            except Exception:
                 print('Task caused error. Terminating now.')
                 self.quit()
                 raise"""
@@ -61,6 +63,7 @@ class Game():
 
     Properties:
       tanks: a list of Tank objects that will compete in the game
+      obstacles: a list of obstacles in the arena
       px: ratio of pixels to in-game length units
       screen_width: arena width in in-game length units
       screen_height: arena height in in-game length units
@@ -76,10 +79,10 @@ class Game():
                   tank remains
     """
 
-    def __init__(self, tanks=[], px=2, screen_width=400, screen_height=400,
-                 real_time=True, fps=60, dt=0.01, pre_step=do_nothing,
-                 post_step=do_nothing, draw=True, max_time=np.inf,
-                 end_on_win=True):
+    def __init__(self, tanks=[], obstacles=[], px=2, screen_width=400,
+                 screen_height=400, real_time=True, fps=60, dt=0.01,
+                 pre_step=do_nothing, post_step=do_nothing, draw=True,
+                 max_time=np.inf, end_on_win=True):
         self.px = px  # pixels per game unit
         self.screen_width = screen_width  # in game units
         self.screen_height = screen_height  # in game units
@@ -98,6 +101,11 @@ class Game():
         for tank in tanks:
             tank.game = self
             self.space.add(tank.body, tank.box, tank.turret_body, tank.turret_circle, tank.pivot, tank.pivot_friction)
+
+        self.obstacles = obstacles
+        for obs in obstacles:
+            obs.game = self
+            self.space.add(obs.body, obs.poly)
 
         # add walls
         # TODO: put this in a loop or function to reduce duplicate code
@@ -253,6 +261,7 @@ class Game():
 
         [T.draw() for T in self.tanks]
         [T.draw_laser() for T in self.tanks]
+        [T.draw() for T in self.obstacles]
 
         str = "Time: {:.2f} ({:.2f}x real time) {:.0f} fps"
         str = str.format(self.time,
@@ -321,7 +330,8 @@ class Game():
         for shooter in self.tanks:
             laser = shooter.get_beam()
             if laser is not None:
-                targets = [tank for tank in self.tanks if tank is not shooter]
+                targets = [tank for tank in self.tanks + self.obstacles
+                           if tank is not shooter]
                 dist = []
                 hit = []
                 for target in targets:
@@ -329,13 +339,14 @@ class Game():
                     if x is not None:
                         dist.append(x)
                         hit.append(target)
-                if len(dist) > 0:
+                if len(dist) > 0:  # any hits
                     laser_length = min(dist)
-                    hit = hit[dist.index(laser_length)]
-                    hit.hull -= dt * shooter.damage
-                    if hit.hull <= 0:
-                        self.tanks.remove(hit)
                     shooter.laser_length = laser_length
+                    hit = hit[dist.index(laser_length)]
+                    if isinstance(hit, Tank):  # otherwise it's an obstacle
+                        hit.hull -= dt * shooter.damage
+                        if hit.hull <= 0:
+                            self.tanks.remove(hit)
                 else:  # back to default, really-long laser_length
                     shooter.laser_length = Tank.laser_length
 
@@ -346,17 +357,30 @@ if __name__ == "__main__":
     screen_height = 400
 
     R = Tank('Waypoint_PID_Controller', (200, 25, 0),
-             [screen_width / 8, screen_height / 2],
+             [screen_width / 8, screen_height * 5 / 6],
              [-pi / 2, -pi / 2])
     # Replace random waypoint generator with corner track waypoint generator
     R.control.waypoint_gen = R.control.waypoint()
     R.control.destination = next(R.control.waypoint_gen)
 
     B = Tank('Waypoint_PID_Controller', (0, 50, 255),
-             [screen_width * 3 / 4, screen_height / 2],
+             [screen_width * 3 / 4, screen_height * 2 / 3],
              [3 * pi / 2, 3 * pi / 2])
 
-    game = Game(tanks=[R, B], screen_width=screen_width,
+    obstacles = []
+    # A rectangle in the middle of the arena
+    points = [(0.4, 0.3), (0.6, 0.3), (0.6, 0.7), (0.4, 0.7)]
+    points = [(x * screen_width, y * screen_height) for (x, y) in points]
+    obstacles.append(Obstacle(points))
+    points = [(0.1, 0.5), (0.2, 0.4), (0.3, 0.5), (0.2, 0.6)]
+    points = [(x * screen_width, y * screen_height) for (x, y) in points]
+    obstacles.append(Obstacle(points))
+    points = [(1.0, 0.0), (1.0, 1.0), (0.8, 0.5)]
+    points = [(x * screen_width, y * screen_height) for (x, y) in points]
+    obstacles.append(Obstacle(points))
+
+    game = Game(tanks=[R, B], obstacles=obstacles,
+                screen_width=screen_width,
                 screen_height=screen_height, real_time=True,
                 fps=60, dt=1 / 100, end_on_win=False)
 
